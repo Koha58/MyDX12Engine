@@ -10,3 +10,5 @@
 # Shader binaries
 *.cso
 *.hlsl.h
+.vs/MyEngine/v17/*
+.vs/
