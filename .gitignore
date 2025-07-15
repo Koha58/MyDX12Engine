@@ -1,0 +1,12 @@
+# Visual Studio build folders
+[Bb]in/
+[Oo]bj/
+.vscode/
+*.user
+*.suo
+*.pdb
+*.vcxproj.user
+
+# Shader binaries
+*.cso
+*.hlsl.h
