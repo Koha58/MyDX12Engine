@@ -12,6 +12,7 @@
 // カスタムクラスのヘッダー
 #include "GameObject.h"   // ゲーム内のオブジェクト構造と動作を定義
 #include "Mesh.h"         // メッシュデータ構造とMeshRendererComponentを定義
+#include "Scene.h"
 
 // Direct3D 12ヘルパーライブラリ (d3dx12.h)
 // このファイルは通常、Microsoft.Direct3D.D3D12 NuGetパッケージに含まれている

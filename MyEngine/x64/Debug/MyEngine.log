@@ -1,2 +1,5 @@
-﻿  LINK : 前回のインクリメンタル リンクで C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\x64\Debug\MyEngine.exe が見つからなかったか、ビルドされませんでした。フル リンクを行います。
-  MyEngine.vcxproj -> C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\x64\Debug\MyEngine.exe
+﻿  D3D12Renderer.cpp
+  main.cpp
+  Scene.cpp
+  コードを生成中...
+  MyEngine.vcxproj -> D:\Users\2312004\Documents\MyEngine\x64\Debug\MyEngine.exe

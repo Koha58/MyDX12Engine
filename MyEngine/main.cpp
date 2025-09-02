@@ -10,6 +10,7 @@
 #include "D3D12Renderer.h" // D3D12描画処理を管理するクラスのヘッダー
 #include "GameObject.h"    // ゲーム内のオブジェクトを表現するクラスのヘッダー
 #include "Mesh.h"          // メッシュデータ構造を定義するヘッダー
+#include "Scene.h" 
 
 // ウィンドウプロシージャ
 // Windowsメッセージを処理するためのコールバック関数

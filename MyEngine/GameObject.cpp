@@ -67,44 +67,58 @@ void GameObject::RemoveChild(std::shared_ptr<GameObject> child)
     child->m_Parent.reset(); // 子オブジェクトの親ポインタをクリアする
 }
 
-// --- Sceneクラスの実装 ---
-
-// Sceneのコンストラクタ
-// @param name: シーンに与えられる名前
-Scene::Scene(const std::string& name)
-    : m_Name(name) // シーンの名前を初期化
-{
-}
-
-// シーンにルートGameObjectを追加する
-// @param gameObject: 追加するGameObjectのshared_ptr
-void Scene::AddGameObject(std::shared_ptr<GameObject> gameObject)
-{
-    // シーンのルートGameObjectリストにGameObjectを追加する
-    // 注意: GameObjectが既に別のGameObjectの子として追加されている場合、
-    // AddChildロジックがそのGameObjectを以前の親から切り離すため、
-    // ここでルートとして追加するのは適切でない場合がある。
-    // 通常、ルートオブジェクトは親を持たない。
-    m_RootGameObjects.push_back(gameObject);
-}
-
-// シーンからルートGameObjectを削除する
-// @param gameObject: 削除するGameObjectのshared_ptr
-void Scene::RemoveGameObject(std::shared_ptr<GameObject> gameObject)
-{
-    // m_RootGameObjectsリストから指定されたGameObjectを削除
-    m_RootGameObjects.erase(std::remove(m_RootGameObjects.begin(), m_RootGameObjects.end(), gameObject), m_RootGameObjects.end());
-}
-
-// シーン内のすべてのルートGameObjectを更新する
-// @param deltaTime: 前のフレームからの経過時間
-void Scene::Update(float deltaTime)
-{
-    // シーン内の各ルートGameObjectを更新する
-    // 各GameObjectのUpdateメソッドが自身の子オブジェクトも再帰的に更新するため、
-    // ここではルートオブジェクトのみをイテレートすればよい
-    for (const auto& go : m_RootGameObjects)
-    {
-        go->Update(deltaTime);
-    }
-}
+//// --- Sceneクラスの実装 ---
+//
+//// Sceneのコンストラクタ
+//// @param name: シーンに与えられる名前
+//Scene::Scene(const std::string& name)
+//    : m_Name(name) // シーンの名前を初期化
+//{
+//}
+//
+//// シーンにルートGameObjectを追加する
+//// @param gameObject: 追加するGameObjectのshared_ptr
+//void Scene::AddGameObject(std::shared_ptr<GameObject> gameObject,
+//    std::shared_ptr<GameObject> parent)
+//{
+//    if (parent) {
+//        parent->AddChild(gameObject);
+//    }
+//    else {
+//        m_RootGameObjects.push_back(gameObject);
+//    }
+//}
+//
+//
+//// シーンからルートGameObjectを削除する
+//// @param gameObject: 削除するGameObjectのshared_ptr
+//void Scene::RemoveGameObject(std::shared_ptr<GameObject> gameObject)
+//{
+//    auto parent = gameObject->m_Parent.lock();
+//
+//    if (parent) {
+//        // 親がいる場合は親から外す → 自動的にルート昇格
+//        parent->RemoveChild(gameObject);
+//    }
+//    else {
+//        // 親がいない場合はルートから削除
+//        m_RootGameObjects.erase(
+//            std::remove(m_RootGameObjects.begin(), m_RootGameObjects.end(), gameObject),
+//            m_RootGameObjects.end()
+//        );
+//        gameObject->m_Scene.reset(); // シーンから完全に外れる
+//    }
+//}
+//
+//// シーン内のすべてのルートGameObjectを更新する
+//// @param deltaTime: 前のフレームからの経過時間
+//void Scene::Update(float deltaTime)
+//{
+//    // シーン内の各ルートGameObjectを更新する
+//    // 各GameObjectのUpdateメソッドが自身の子オブジェクトも再帰的に更新するため、
+//    // ここではルートオブジェクトのみをイテレートすればよい
+//    for (const auto& go : m_RootGameObjects)
+//    {
+//        go->Update(deltaTime);
+//    }
+//}

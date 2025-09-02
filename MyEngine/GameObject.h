@@ -10,6 +10,7 @@
 // これらのクラスの完全な定義はここでは不要だが、ポインタや参照型として使用するために宣言
 class Component;
 class MeshRendererComponent; // Mesh.h で定義される
+class Scene;
 
 // --- Componentのベースクラス ---
 // すべての具体的なコンポーネントはこのクラスから派生する
@@ -136,6 +137,8 @@ public:
         return nullptr; // 見つからなかった場合はnullptrを返す
     }
 
+    std::shared_ptr<Scene> GetScene() const { return m_Scene.lock(); }
+
     // GameObjectの更新ロジック
     // シーンの更新ループから呼ばれ、自身と子オブジェクト、アタッチされたコンポーネントを更新する
     // @param deltaTime: 前のフレームからの経過時間
@@ -153,40 +156,9 @@ private:
     std::vector<std::shared_ptr<Component>> m_Components; // このGameObjectにアタッチされたコンポーネントのリスト
     std::vector<std::shared_ptr<GameObject>> m_Children;  // このGameObjectの子オブジェクトのリスト
     std::weak_ptr<GameObject> m_Parent;                   // 親GameObjectへの弱い参照（循環参照を防ぐため）
+    std::weak_ptr<Scene> m_Scene; // 自分が所属するシーン
 
     // Sceneクラスがm_Parentにアクセスできるようにフレンド宣言
     // SceneがGameObjectの親子関係を管理する際に必要となる
     friend class Scene;
-};
-
-// --- Sceneクラス ---
-// 複数のGameObjectを管理し、シーン全体の更新を行う
-// ゲームの論理的な区切り（例: レベル、メニュー画面など）を表す
-class Scene
-{
-public:
-    // コンストラクタ
-    // @param name: シーンの名前 (デフォルトは"New Scene")
-    Scene(const std::string& name = "New Scene");
-
-    // デストラクタ
-    ~Scene() = default;
-
-    // シーンにルートGameObjectを追加する
-    // @param gameObject: 追加するGameObjectのshared_ptr
-    void AddGameObject(std::shared_ptr<GameObject> gameObject);
-    // シーンからルートGameObjectを削除する
-    // @param gameObject: 削除するGameObjectのshared_ptr
-    void RemoveGameObject(std::shared_ptr<GameObject> gameObject);
-
-    // シーン内のすべてのルートGameObjectを更新する
-    // @param deltaTime: 前のフレームからの経過時間
-    void Update(float deltaTime);
-
-    // シーンのルートGameObjectリストをconst参照で取得するゲッター
-    const std::vector<std::shared_ptr<GameObject>>& GetRootGameObjects() const { return m_RootGameObjects; }
-
-private:
-    std::string m_Name;                                    // シーンの名前
-    std::vector<std::shared_ptr<GameObject>> m_RootGameObjects; // シーンの最上位階層にあるGameObjectのリスト
 };
