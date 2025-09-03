@@ -11,6 +11,8 @@
 
 // Component クラスが定義されている GameObject.h をインクルード
 #include "GameObject.h"  // Component基底クラスとGameObjectクラスの定義
+#include "Component.h"
+#include "TransformComponent.h"
 
 // 前方宣言:
 // D3D12Renderer クラスが MeshRendererComponent のプライベートメンバーにアクセスできるように、

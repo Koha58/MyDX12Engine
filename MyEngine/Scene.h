@@ -25,6 +25,11 @@ public:
     // シーンからルートGameObjectを削除する
     void RemoveGameObject(std::shared_ptr<GameObject> gameObject);
 
+    // UnityのDestroy相当（遅延実行）
+    void DestroyGameObject(std::shared_ptr<GameObject> gameObject);
+
+    void DestroyAllGameObjects();
+
     // シーン内のすべてのルートGameObjectを更新する
     void Update(float deltaTime);
 
@@ -34,4 +39,10 @@ public:
 private:
     std::string m_Name;                                    // シーンの名前
     std::vector<std::shared_ptr<GameObject>> m_RootGameObjects; // シーンの最上位階層にあるGameObjectのリスト
+
+    // Destroy予約リスト
+    std::vector<std::shared_ptr<GameObject>> m_DestroyQueue;
+
+    // Destroy実行用の内部関数（再帰）
+    void ExecuteDestroy(std::shared_ptr<GameObject> gameObject);
 };

@@ -1,4 +1,6 @@
 #include "GameObject.h" // GameObjectクラスの定義を含むヘッダーファイル
+#include "Scene.h"
+#include "TransformComponent.h"
 #include <algorithm>    // std::removeアルゴリズムを使用するためにインクルード
 
 // --- GameObjectクラスの実装 ---
@@ -65,60 +67,29 @@ void GameObject::RemoveChild(std::shared_ptr<GameObject> child)
     // eraseはその論理的な終端から物理的な終端までを削除する
     m_Children.erase(std::remove(m_Children.begin(), m_Children.end(), child), m_Children.end());
     child->m_Parent.reset(); // 子オブジェクトの親ポインタをクリアする
+
+    // 親から外れたら Scene のルートに戻す
+    if (auto scene = child->m_Scene.lock()) {
+        scene->AddGameObject(child, nullptr);
+    }
 }
 
-//// --- Sceneクラスの実装 ---
-//
-//// Sceneのコンストラクタ
-//// @param name: シーンに与えられる名前
-//Scene::Scene(const std::string& name)
-//    : m_Name(name) // シーンの名前を初期化
-//{
-//}
-//
-//// シーンにルートGameObjectを追加する
-//// @param gameObject: 追加するGameObjectのshared_ptr
-//void Scene::AddGameObject(std::shared_ptr<GameObject> gameObject,
-//    std::shared_ptr<GameObject> parent)
-//{
-//    if (parent) {
-//        parent->AddChild(gameObject);
-//    }
-//    else {
-//        m_RootGameObjects.push_back(gameObject);
-//    }
-//}
-//
-//
-//// シーンからルートGameObjectを削除する
-//// @param gameObject: 削除するGameObjectのshared_ptr
-//void Scene::RemoveGameObject(std::shared_ptr<GameObject> gameObject)
-//{
-//    auto parent = gameObject->m_Parent.lock();
-//
-//    if (parent) {
-//        // 親がいる場合は親から外す → 自動的にルート昇格
-//        parent->RemoveChild(gameObject);
-//    }
-//    else {
-//        // 親がいない場合はルートから削除
-//        m_RootGameObjects.erase(
-//            std::remove(m_RootGameObjects.begin(), m_RootGameObjects.end(), gameObject),
-//            m_RootGameObjects.end()
-//        );
-//        gameObject->m_Scene.reset(); // シーンから完全に外れる
-//    }
-//}
-//
-//// シーン内のすべてのルートGameObjectを更新する
-//// @param deltaTime: 前のフレームからの経過時間
-//void Scene::Update(float deltaTime)
-//{
-//    // シーン内の各ルートGameObjectを更新する
-//    // 各GameObjectのUpdateメソッドが自身の子オブジェクトも再帰的に更新するため、
-//    // ここではルートオブジェクトのみをイテレートすればよい
-//    for (const auto& go : m_RootGameObjects)
-//    {
-//        go->Update(deltaTime);
-//    }
-//}
+void GameObject::Destroy()
+{
+    if (m_Destroyed) return; // 既に破棄済みなら何もしない
+    m_Destroyed = true;
+
+    // コンポーネントに OnDestroy を通知
+    for (auto& comp : m_Components)
+    {
+        comp->OnDestroy();
+    }
+    m_Components.clear();
+
+    // 子オブジェクトを再帰的に破棄
+    for (auto& child : m_Children)
+    {
+        child->Destroy();
+    }
+    m_Children.clear();
+}

@@ -6,82 +6,15 @@
 #include <memory>        // std::shared_ptr, std::weak_ptr, std::enable_shared_from_this を使用
 #include <type_traits>   // std::is_base_of を使用（テンプレートメタプログラミング）
 
+#include "TransformComponent.h" // これを追加
+#include "Component.h"
+
 // 前方宣言:
 // これらのクラスの完全な定義はここでは不要だが、ポインタや参照型として使用するために宣言
 class Component;
 class MeshRendererComponent; // Mesh.h で定義される
 class Scene;
 
-// --- Componentのベースクラス ---
-// すべての具体的なコンポーネントはこのクラスから派生する
-// コンポーネントはGameObjectにアタッチされ、特定の機能を提供する
-class Component
-{
-public:
-    // コンポーネントのタイプを識別するための列挙型
-    enum ComponentType
-    {
-        None = 0,        // 未指定またはデフォルト
-        Transform,       // 位置、回転、スケールを管理するコンポーネント
-        MeshRenderer,    // メッシュの描画を担当するコンポーネント
-        // 必要に応じて他のコンポーネントタイプを追加する
-        MAX_COMPONENT_TYPES // 型の数を数えるための番兵値
-    };
-
-    // コンストラクタ: コンポーネントタイプを受け取る
-    Component(ComponentType type) : m_Type(type) {}
-
-    // デストラクタ: ポリモーフィックな削除を可能にするために仮想デストラクタとする
-    virtual ~Component() = default;
-
-    // コンポーネントのタイプを取得するゲッター
-    ComponentType GetType() const { return m_Type; }
-
-    // 仮想関数: 各コンポーネント固有のロジックを実装するためにオーバーライドされる
-    virtual void Initialize() {} // コンポーネントがアタッチされた後の初期化処理
-    virtual void Update(float deltaTime) {} // フレームごとの更新処理
-    virtual void Render() {} // 描画処理 (通常はレンダリングパス内で処理されることが多い)
-
-protected:
-    ComponentType m_Type; // このコンポーネントのタイプ
-};
-
-// --- TransformComponentクラス ---
-// Componentから派生し、GameObjectの位置、回転、スケールを管理する
-class TransformComponent : public Component
-{
-public:
-    DirectX::XMFLOAT3 Position; // オブジェクトの3D空間における位置
-    DirectX::XMFLOAT3 Rotation; // オブジェクトのオイラー角による回転 (ラジアン単位)
-    DirectX::XMFLOAT3 Scale;    // オブジェクトの3軸方向へのスケール
-
-    // コンストラクタ
-    TransformComponent()
-        : Component(ComponentType::Transform), // Component基底クラスのコンストラクタを呼び出す
-        Position(0.0f, 0.0f, 0.0f),            // 位置を原点で初期化
-        Rotation(0.0f, 0.0f, 0.0f),            // 回転を初期化 (無回転)
-        Scale(1.0f, 1.0f, 1.0f) {              // スケールを1.0で初期化
-    }
-
-    // ワールド行列を計算する関数
-    // 位置、回転、スケールからモデルのワールド変換行列を生成する
-    DirectX::XMMATRIX GetWorldMatrix() const
-    {
-        using namespace DirectX; // DirectXMath名前空間をusing宣言
-        // スケール行列の生成
-        XMMATRIX scaleMatrix = XMMatrixScaling(Scale.x, Scale.y, Scale.z);
-        // 各軸周りの回転行列の生成 (Z -> Y -> X の順で乗算されるよう準備)
-        XMMATRIX rotationX = XMMatrixRotationX(Rotation.x);
-        XMMATRIX rotationY = XMMatrixRotationY(Rotation.y);
-        XMMATRIX rotationZ = XMMatrixRotationZ(Rotation.z);
-        // 平行移動行列の生成
-        XMMATRIX translationMatrix = XMMatrixTranslation(Position.x, Position.y, Position.z);
-
-        // 一般的な変換順序: スケール -> 回転 -> 平行移動
-        // 行ベクトルを使う場合、乗算順序は (S * R * T) となる
-        return scaleMatrix * rotationX * rotationY * rotationZ * translationMatrix;
-    }
-};
 
 // --- GameObjectクラス ---
 // シーン内のすべてのオブジェクトの基盤となるクラス
@@ -138,6 +71,23 @@ public:
     }
 
     std::shared_ptr<Scene> GetScene() const { return m_Scene.lock(); }
+    void SetScene(std::shared_ptr<Scene> scene) { m_Scene = scene; }
+
+    // 親を安全に取得するヘルパー（Scene.cpp から使う）
+    std::shared_ptr<GameObject> GetParent() const { return m_Parent.lock(); }
+
+    // 破棄フラグつきの「生存判定」
+    explicit operator bool() const {
+        return !m_Destroyed;
+    }
+
+    bool IsDestroyed() const { return m_Destroyed; }
+
+    // Destroy 予約されたら Scene から即フラグを立てる
+    void MarkAsDestroyed() { m_Destroyed = true; }
+
+    // GameObjectが破棄されるときに呼ぶ関数
+    void Destroy();
 
     // GameObjectの更新ロジック
     // シーンの更新ループから呼ばれ、自身と子オブジェクト、アタッチされたコンポーネントを更新する
@@ -157,6 +107,8 @@ private:
     std::vector<std::shared_ptr<GameObject>> m_Children;  // このGameObjectの子オブジェクトのリスト
     std::weak_ptr<GameObject> m_Parent;                   // 親GameObjectへの弱い参照（循環参照を防ぐため）
     std::weak_ptr<Scene> m_Scene; // 自分が所属するシーン
+
+    bool m_Destroyed = false;
 
     // Sceneクラスがm_Parentにアクセスできるようにフレンド宣言
     // SceneがGameObjectの親子関係を管理する際に必要となる

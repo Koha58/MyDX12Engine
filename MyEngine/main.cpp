@@ -12,6 +12,24 @@
 #include "Mesh.h"          // メッシュデータ構造を定義するヘッダー
 #include "Scene.h" 
 
+// -----------------------------
+// テスト用コンポーネント定義
+// -----------------------------
+class TestComponent : public Component
+{
+public:
+    TestComponent() : Component(ComponentType::None) {}
+
+    void DebugLog(const std::string& msg) {
+        OutputDebugStringA((msg + "\n").c_str());
+    }
+
+    void OnDestroy() override
+    {
+        DebugLog("TestComponent: OnDestroy called!");
+    }
+};
+
 // ウィンドウプロシージャ
 // Windowsメッセージを処理するためのコールバック関数
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -156,6 +174,10 @@ int WINAPI WinMain(
     std::shared_ptr<GameObject> cube1 = std::make_shared<GameObject>("Cube1");
     // 左に大きく移動させて、2つのキューブが見えるか確認
     cube1->Transform->Position = DirectX::XMFLOAT3(-2.0f, 0.0f, 0.0f);
+
+    // TestComponent を追加
+    std::shared_ptr<TestComponent> testComp = cube1->AddComponent<TestComponent>();
+
     // メッシュレンダラーコンポーネントを追加
     std::shared_ptr<MeshRendererComponent> meshRenderer1 = cube1->AddComponent<MeshRendererComponent>();
     meshRenderer1->SetMesh(cubeMeshData); // CPU側のメッシュデータを設定
@@ -212,6 +234,12 @@ int WINAPI WinMain(
             // シーンのレンダリング
             renderer.Render();
         }
+    }
+
+    // シーン内のすべてのゲームオブジェクトを破棄
+    if (mainScene)
+    {
+        mainScene->DestroyAllGameObjects();
     }
 
     // アプリケーション終了時のクリーンアップ処理
