@@ -710,3 +710,14 @@ void D3D12Renderer::WaitForPreviousFrame()
     fenceValue++; // 次のフレームのためにフェンス値をインクリメント
     frameIndex = swapChain->GetCurrentBackBufferIndex(); // 次に表示されるバックバッファのインデックスを更新
 }
+
+void D3D12Renderer::DrawMesh(MeshRendererComponent* meshRenderer)
+{
+    if (!meshRenderer) return;
+
+    m_CommandList->IASetVertexBuffers(0, 1, &meshRenderer->VertexBufferView);
+    m_CommandList->IASetIndexBuffer(&meshRenderer->IndexBufferView);
+    m_CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    m_CommandList->DrawIndexedInstanced(meshRenderer->IndexCount, 1, 0, 0, 0);
+}

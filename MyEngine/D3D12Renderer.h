@@ -49,6 +49,8 @@ public:
     // コマンドを記録し、GPUに送信し、結果を表示する
     void Render();
 
+    void DrawMesh(MeshRendererComponent* meshRenderer);
+
     // クリーンアップ関数:
     // 作成されたD3D12リソースを解放する
     void Cleanup();
@@ -109,6 +111,8 @@ private:
     UINT m_Height;                                                 // クライアント領域の高さ
     UINT frameIndex;                                               // 現在のバックバッファのインデックス
     UINT m_frameCount;                                             // アニメーションなどに使用するフレームカウンター
+
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_CommandList;
 
     // === プライベートヘルパー関数 ===
     // D3D12デバイスを作成する

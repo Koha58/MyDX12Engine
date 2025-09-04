@@ -78,11 +78,6 @@ public:
 
     UINT IndexCount; // 描画するインデックスの総数。DrawIndexedInstanced呼び出しに必要。
 
-    // 初期化関数:
-    // このコンポーネント独自の初期化ロジックはD3D12Renderer::CreateMeshRendererResourcesで行われるため、
-    // ここでは基底クラスのInitializeをオーバーライドして空の実装とする。
-    virtual void Initialize() override {}
-
 private:
     // CPU側で保持するメッシュデータ。
     // 必要に応じてGPUにアップロードされる生データ。D3D12Rendererからアクセスされる。

@@ -4,6 +4,7 @@
 #include <memory>
 
 class GameObject;
+class D3D12Renderer;
 
 // --- Sceneクラス ---
 // 複数のGameObjectを管理し、シーン全体の更新を行う
@@ -17,6 +18,11 @@ public:
 
     // デストラクタ
     ~Scene() = default;
+
+    void SetActive(bool active); // シーン全体を有効/無効にする
+    bool IsActive() const { return m_Active; }
+
+    void Render(D3D12Renderer* renderer);
 
     // シーンにルートGameObjectを追加する
     void AddGameObject(std::shared_ptr<GameObject> gameObject,
@@ -45,4 +51,6 @@ private:
 
     // Destroy実行用の内部関数（再帰）
     void ExecuteDestroy(std::shared_ptr<GameObject> gameObject);
+
+    bool m_Active = true; // デフォルトは有効
 };

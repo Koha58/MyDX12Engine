@@ -1,5 +1,6 @@
 #include "GameObject.h" // GameObjectクラスの定義を含むヘッダーファイル
 #include "Scene.h"
+#include "Component.h"
 #include "TransformComponent.h"
 #include <algorithm>    // std::removeアルゴリズムを使用するためにインクルード
 
@@ -31,16 +32,36 @@ GameObject::~GameObject()
 // @param deltaTime: 前のフレームからの経過時間
 void GameObject::Update(float deltaTime)
 {
-    // このGameObjectにアタッチされているすべてのコンポーネントを更新する
-    for (const auto& comp : m_Components)
-    {
-        comp->Update(deltaTime);
+    if (m_Destroyed || !m_Active) return;
+
+    // 子オブジェクトを先に更新
+    for (auto& child : m_Children) {
+        child->Update(deltaTime);
     }
 
-    // このGameObjectの子オブジェクトを再帰的に更新する
-    for (const auto& child : m_Children)
+    // コンポーネント更新
+    for (auto& comp : m_Components)
     {
-        child->Update(deltaTime);
+        if (!comp) continue;
+
+        // Start は一度だけ呼ぶ
+        if (!comp->HasStarted()) {
+            comp->Start();
+            comp->MarkStarted();
+        }
+
+        // 有効な場合のみ Update
+        if (comp->IsEnabled()) {
+            comp->Update(deltaTime);
+        }
+    }
+
+    // LateUpdate
+    for (auto& comp : m_Components)
+    {
+        if (comp && comp->IsEnabled()) {
+            comp->LateUpdate(deltaTime);
+        }
     }
 }
 
@@ -74,6 +95,27 @@ void GameObject::RemoveChild(std::shared_ptr<GameObject> child)
     }
 }
 
+void GameObject::SetActive(bool active)
+{
+    if (m_Active == active) return; // 状態が変わらないなら何もしない
+    m_Active = active;
+
+    // コンポーネントに通知
+    for (auto& comp : m_Components)
+    {
+        if (!comp) continue;
+        if (m_Active) comp->OnEnable();
+        else comp->OnDisable();
+    }
+
+    // 子オブジェクトにも再帰的に伝える
+    for (auto& child : m_Children)
+    {
+        if (child) child->SetActive(active);
+    }
+}
+
+
 void GameObject::Destroy()
 {
     if (m_Destroyed) return; // 既に破棄済みなら何もしない
@@ -93,3 +135,22 @@ void GameObject::Destroy()
     }
     m_Children.clear();
 }
+
+void GameObject::Render(D3D12Renderer* renderer)
+{
+    if (!m_Active) return;
+
+    // コンポーネント描画
+    for (auto& comp : m_Components)
+    {
+        if (comp) comp->Render(renderer);
+    }
+
+    // 子オブジェクトも再帰的に描画
+    for (auto& child : m_Children)
+    {
+        if (child) child->Render(renderer);
+    }
+}
+
+

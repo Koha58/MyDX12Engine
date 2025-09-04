@@ -1,250 +1,225 @@
-#include <windows.h> // Windows APIの基本機能
-#include <string>    // std::stringを使用
-#include <memory>    // std::shared_ptrを使用
-#include <iostream>  // 入出力ストリーム用（デバッグ目的など）
+#include <windows.h>
+#include <string>
+#include <memory>
+#include <iostream>
+#include <sal.h>
+#include <cmath>
 
-// SAL (Source Code Annotation Language) アノテーションのために必要
-// コンパイラによるコード解析を強化し、潜在的なバグを特定するのに役立つ
-#include <sal.h> 
+#include "D3D12Renderer.h"
+#include "GameObject.h"
+#include "Mesh.h"
+#include "Scene.h"
+#include "SceneManager.h"
 
-#include "D3D12Renderer.h" // D3D12描画処理を管理するクラスのヘッダー
-#include "GameObject.h"    // ゲーム内のオブジェクトを表現するクラスのヘッダー
-#include "Mesh.h"          // メッシュデータ構造を定義するヘッダー
-#include "Scene.h" 
-
-// -----------------------------
-// テスト用コンポーネント定義
-// -----------------------------
+// =============================
+// デバッグ用コンポーネント
+// =============================
 class TestComponent : public Component
 {
 public:
     TestComponent() : Component(ComponentType::None) {}
 
-    void DebugLog(const std::string& msg) {
-        OutputDebugStringA((msg + "\n").c_str());
+    void OnEnable() override {
+        OutputDebugStringA("TestComponent: OnEnable\n");
     }
 
-    void OnDestroy() override
-    {
-        DebugLog("TestComponent: OnDestroy called!");
+    void OnDisable() override {
+        OutputDebugStringA("TestComponent: OnDisable\n");
+    }
+
+    void OnDestroy() override {
+        MessageBoxA(nullptr, "TestComponent: OnDestroy called!", "Debug", MB_OK);
     }
 };
 
+// =============================
+// Cube2 移動用コンポーネント
+// =============================
+class MoveComponent : public Component
+{
+public:
+    MoveComponent(GameObject* owner) : Component(ComponentType::None), m_Owner(owner) {}
+
+    void Update(float deltaTime) override {
+        // オーナーが存在し、かつアクティブの場合のみ動作
+        if (!m_Owner || !m_Owner->IsActive()) return;
+
+        // フレームカウントに基づくサイン波移動
+        m_Owner->Transform->Position.z = sin(m_FrameCount * 0.05f) * 2.0f;
+        m_FrameCount++;
+    }
+
+    void OnEnable() override {
+        OutputDebugStringA("MoveComponent: OnEnable\n");
+    }
+
+    void OnDisable() override {
+        OutputDebugStringA("MoveComponent: OnDisable\n");
+    }
+
+private:
+    GameObject* m_Owner = nullptr;
+    int m_FrameCount = 0;
+};
+
+// =============================
 // ウィンドウプロシージャ
-// Windowsメッセージを処理するためのコールバック関数
+// =============================
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
-    case WM_DESTROY: // ウィンドウが破棄されるときに発生
-        PostQuitMessage(0); // アプリケーション終了メッセージを投稿
+    case WM_DESTROY:
+        PostQuitMessage(0);
         break;
-    default: // その他のメッセージはデフォルトのウィンドウプロシージャに任せる
+    default:
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
-    return 0; // メッセージを処理したことを示す
+    return 0;
 }
 
-// キューブの頂点とインデックスデータを生成する関数
+// =============================
+// キューブメッシュ生成
+// =============================
 MeshData CreateCubeMeshData()
 {
     MeshData meshData;
-    // 頂点データの設定: 位置 (x, y, z) と色 (r, g, b, a)
     meshData.Vertices = {
-        // Front face (Red Green Blue Yellow)
-        { {-0.5f,  0.5f, -0.5f}, {1.0f, 0.0f, 0.0f, 1.0f} }, // 0: Front Top Left
-        { { 0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f, 1.0f} }, // 1: Front Top Right
-        { {-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 1.0f, 1.0f} }, // 2: Front Bottom Left
-        { { 0.5f, -0.5f, -0.5f}, {1.0f, 1.0f, 0.0f, 1.0f} }, // 3: Front Bottom Right
-
-        // Back face (Cyan Magenta Black White)
-        { {-0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 1.0f, 1.0f} }, // 4: Back Top Left
-        { { 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 1.0f, 1.0f} }, // 5: Back Top Right
-        { {-0.5f, -0.5f,  0.5f}, {0.0f, 0.0f, 0.0f, 1.0f} }, // 6: Back Bottom Left
-        { { 0.5f, -0.5f,  0.5f}, {1.0f, 1.0f, 1.0f, 1.0f} }, // 7: Back Bottom Right
+        {{-0.5f, 0.5f,-0.5f},{1,0,0,1}},
+        {{ 0.5f, 0.5f,-0.5f},{0,1,0,1}},
+        {{-0.5f,-0.5f,-0.5f},{0,0,1,1}},
+        {{ 0.5f,-0.5f,-0.5f},{1,1,0,1}},
+        {{-0.5f, 0.5f, 0.5f},{0,1,1,1}},
+        {{ 0.5f, 0.5f, 0.5f},{1,0,1,1}},
+        {{-0.5f,-0.5f, 0.5f},{0,0,0,1}},
+        {{ 0.5f,-0.5f, 0.5f},{1,1,1,1}},
     };
-
-    // インデックスデータの設定
-    // 各面を2つの三角形で構成し、各頂点インデックスを指定
     meshData.Indices = {
-        // Front face (0,1,2,3)
-        0, 1, 2,
-        1, 3, 2,
-
-        // Back face (4,5,6,7)
-        4, 6, 5,
-        5, 6, 7,
-
-        // Top face (0,1,4,5)
-        4, 5, 0,
-        5, 1, 0,
-
-        // Bottom face (2,3,6,7)
-        2, 3, 6,
-        3, 7, 6,
-
-        // Right face (1,3,5,7)
-        1, 5, 3,
-        5, 7, 3,
-
-        // Left face (0,2,4,6)
-        4, 0, 6,
-        0, 2, 6,
+        0,1,2,1,3,2, 4,6,5,5,6,7,
+        4,5,0,5,1,0, 2,3,6,3,7,6,
+        1,5,3,5,7,3, 4,0,6,0,2,6
     };
     return meshData;
 }
 
-// WinMain 関数: Windowsアプリケーションのエントリーポイント
-// SALアノテーションが引数の使用方法を記述し、コード品質を向上させる
-int WINAPI WinMain(
-    _In_ HINSTANCE hInstance,       // アプリケーションの現在のインスタンスへのハンドル
-    _In_opt_ HINSTANCE hPrevInstance, // アプリケーションの前のインスタンスへのハンドル（常にNULL）
-    _In_ LPSTR lpCmdLine,           // コマンドライン文字列
-    _In_ int nCmdShow               // ウィンドウの表示方法を示すフラグ
-)
+// =============================
+// WinMain
+// =============================
+int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int nCmdShow)
 {
-    // ウィンドウクラス名の定義
+    // -----------------------------
+    // ウィンドウ作成
+    // -----------------------------
     const wchar_t CLASS_NAME[] = L"D3D12WindowClass";
-
-    // ウィンドウクラス構造体の設定
     WNDCLASS wc = {};
-    wc.lpfnWndProc = WndProc;         // ウィンドウプロシージャを設定
-    wc.hInstance = hInstance;         // インスタンスハンドル
-    wc.lpszClassName = CLASS_NAME;    // クラス名
-    wc.hCursor = LoadCursor(nullptr, IDC_ARROW); // デフォルトカーソル
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); // デフォルト背景色
+    wc.lpfnWndProc = WndProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = CLASS_NAME;
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    RegisterClass(&wc);
 
-    // ウィンドウクラスの登録
-    if (!RegisterClass(&wc))
-    {
-        MessageBox(nullptr, L"ウィンドウクラスの登録に失敗しました！", L"エラー", MB_OK | MB_ICONERROR);
-        return 1; // 失敗時はエラーコードを返す
-    }
-
-    // ウィンドウの初期サイズとスタイルの設定
-    RECT windowRect = { 0, 0, 800, 600 };
-    // クライアント領域のサイズに基づいてウィンドウの実際のサイズを計算
+    RECT windowRect = { 0,0,800,600 };
     AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, FALSE);
-
-    // 計算されたクライアント領域の幅と高さを取得
     const UINT ClientWidth = windowRect.right - windowRect.left;
     const UINT ClientHeight = windowRect.bottom - windowRect.top;
 
-    // ウィンドウの作成
-    HWND hWnd = CreateWindowEx(
-        0,                            // 拡張スタイル
-        CLASS_NAME,                   // 登録済みのウィンドウクラス名
-        L"DirectX 12 Engine",         // ウィンドウのタイトルバーに表示されるテキスト
-        WS_OVERLAPPEDWINDOW,          // ウィンドウのスタイル
-        CW_USEDEFAULT, CW_USEDEFAULT, // 初期位置 (システムに任せる)
-        ClientWidth, ClientHeight,    // 初期サイズ
-        nullptr,                      // 親ウィンドウのハンドル
-        nullptr,                      // メニューハンドルまたは子ウィンドウID
-        hInstance,                    // アプリケーションインスタンスのハンドル
-        nullptr                       // アプリケーション定義データへのポインタ
-    );
-
-    // ウィンドウ作成の失敗チェック
-    if (hWnd == nullptr)
-    {
-        MessageBox(nullptr, L"ウィンドウの作成に失敗しました！", L"エラー", MB_OK | MB_ICONERROR);
-        return 1; // 失敗時はエラーコードを返す
-    }
-
-    // ウィンドウを表示し、更新
+    HWND hWnd = CreateWindowEx(0, CLASS_NAME, L"DirectX12 Engine",
+        WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        ClientWidth, ClientHeight,
+        nullptr, nullptr, hInstance, nullptr);
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
 
-    // D3D12Renderer オブジェクトの初期化
+    // -----------------------------
+    // D3D12Renderer 初期化
+    // -----------------------------
     D3D12Renderer renderer;
-    if (!renderer.Initialize(hWnd, ClientWidth, ClientHeight))
-    {
-        MessageBox(nullptr, L"D3D12Renderer の初期化に失敗しました。", L"エラー", MB_OK | MB_ICONERROR);
-        return 1; // 失敗時はエラーコードを返す
-    }
+    renderer.Initialize(hWnd, ClientWidth, ClientHeight);
 
-    // --- シーンとGameObjectの作成 ---
-    // メインシーンを作成
-    std::shared_ptr<Scene> mainScene = std::make_shared<Scene>("Main Scene");
+    // -----------------------------
+    // SceneManager と Scene作成
+    // -----------------------------
+    SceneManager sceneManager;
+    auto mainScene = std::make_shared<Scene>("Main Scene");
+    sceneManager.AddScene("Main", mainScene);
+    sceneManager.SwitchScene("Main");
 
-    // キューブのメッシュデータを生成
     MeshData cubeMeshData = CreateCubeMeshData();
 
-    // 最初のキューブGameObjectを作成
-    std::shared_ptr<GameObject> cube1 = std::make_shared<GameObject>("Cube1");
-    // 左に大きく移動させて、2つのキューブが見えるか確認
-    cube1->Transform->Position = DirectX::XMFLOAT3(-2.0f, 0.0f, 0.0f);
+    // -----------------------------
+    // Cube1 作成
+    // -----------------------------
+    auto cube1 = std::make_shared<GameObject>("Cube1");
+    cube1->Transform->Position = { -2.0f,0.0f,0.0f };
+    cube1->AddComponent<TestComponent>();
+    auto meshRenderer1 = cube1->AddComponent<MeshRendererComponent>();
+    meshRenderer1->SetMesh(cubeMeshData);
+    renderer.CreateMeshRendererResources(meshRenderer1);
 
-    // TestComponent を追加
-    std::shared_ptr<TestComponent> testComp = cube1->AddComponent<TestComponent>();
-
-    // メッシュレンダラーコンポーネントを追加
-    std::shared_ptr<MeshRendererComponent> meshRenderer1 = cube1->AddComponent<MeshRendererComponent>();
-    meshRenderer1->SetMesh(cubeMeshData); // CPU側のメッシュデータを設定
-    // D3D12リソースをGPUにアップロード
-    if (!renderer.CreateMeshRendererResources(meshRenderer1)) {
-        MessageBox(nullptr, L"Cube1 のメッシュリソース作成に失敗しました。", L"エラー", MB_OK | MB_ICONERROR);
-        return 1; // 失敗時はエラーコードを返す
-    }
-
-    // 2番目のキューブGameObjectを作成 (異なる位置)
-    std::shared_ptr<GameObject> cube2 = std::make_shared<GameObject>("Cube2");
-    // 右に大きく移動させて、2つのキューブが見えるか確認
-    cube2->Transform->Position = DirectX::XMFLOAT3(2.0f, 0.0f, 0.0f);
-    // メッシュレンダラーコンポーネントを追加
-    std::shared_ptr<MeshRendererComponent> meshRenderer2 = cube2->AddComponent<MeshRendererComponent>();
+    // -----------------------------
+    // Cube2 作成
+    // -----------------------------
+    auto cube2 = std::make_shared<GameObject>("Cube2");
+    cube2->Transform->Position = { 2.0f,0.0f,0.0f };
+    auto meshRenderer2 = cube2->AddComponent<MeshRendererComponent>();
     meshRenderer2->SetMesh(cubeMeshData);
-    // D3D12リソースをGPUにアップロード
-    if (!renderer.CreateMeshRendererResources(meshRenderer2)) {
-        MessageBox(nullptr, L"Cube2 のメッシュリソース作成に失敗しました。", L"エラー", MB_OK | MB_ICONERROR);
-        return 1; // 失敗時はエラーコードを返す
-    }
+    renderer.CreateMeshRendererResources(meshRenderer2);
+    cube2->AddComponent<MoveComponent>(cube2.get()); // MoveComponent追加
 
-    // シーンにGameObjectを追加
+    // シーンに追加
     mainScene->AddGameObject(cube1);
     mainScene->AddGameObject(cube2);
 
-    // レンダラーにメインシーンを設定
-    renderer.SetScene(mainScene);
+    // -----------------------------
+    // メインループ
+    // -----------------------------
+    MSG msg = { 0 };
+    float elapsedTime = 0.0f;
 
-    // ゲームループ
-    MSG msg = { 0 }; // メッセージ構造体を初期化
-    while (WM_QUIT != msg.message) // WM_QUITメッセージが来るまでループを続ける
+    while (WM_QUIT != msg.message)
     {
-        // メッセージキューにメッセージがあるかチェックし、あれば取り出す
         if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
         {
-            TranslateMessage(&msg); // キーボードメッセージを変換
-            DispatchMessage(&msg);  // ウィンドウプロシージャにメッセージをディスパッチ
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
         }
-        else // メッセージがない場合、ゲームロジックとレンダリングを実行
+        else
         {
-            // 時間更新 (簡易的なdeltaTime、実際には高精度タイマーを使用すべき)
-            float deltaTime = 1.0f / 60.0f; // 60fpsを想定した固定デルタタイム
+            float deltaTime = 1.0f / 60.0f;
+            elapsedTime += deltaTime;
 
-            // シーンの更新ロジック
-            mainScene->Update(deltaTime);
+            // 2秒ごとに Cube2 のアクティブ切替
+            if (elapsedTime >= 2.0f)
+            {
+                cube2->SetActive(!cube2->IsActive());
+                elapsedTime = 0.0f;
+            }
 
-            // Cube1を回転させる例
-            cube1->Transform->Rotation.y += DirectX::XMConvertToRadians(1.0f); // 毎フレームY軸周りに1度回転
+            // アクティブシーン取得
+            auto activeScene = sceneManager.GetActiveScene();
+            if (activeScene)
+            {
+                activeScene->Update(deltaTime); // Scene内の全GameObject更新
 
-            // Cube2をZ軸上でサイン波状に移動させる例
-            cube2->Transform->Position.z = sin(renderer.GetFrameCount() * 0.05f) * 2.0f;
+                // Cube1: Y軸回転
+                cube1->Transform->Rotation.y += DirectX::XMConvertToRadians(1.0f);
 
-            // シーンのレンダリング
-            renderer.Render();
+                renderer.SetScene(activeScene);
+                renderer.Render();
+            }
         }
     }
 
-    // シーン内のすべてのゲームオブジェクトを破棄
-    if (mainScene)
+    // -----------------------------
+    // クリーンアップ
+    // -----------------------------
+    if (auto activeScene = sceneManager.GetActiveScene())
     {
-        mainScene->DestroyAllGameObjects();
+        activeScene->DestroyAllGameObjects();
     }
-
-    // アプリケーション終了時のクリーンアップ処理
     renderer.Cleanup();
 
-    // アプリケーションの終了コードを返す
     return static_cast<int>(msg.wParam);
 }

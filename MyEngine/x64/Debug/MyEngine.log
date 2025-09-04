@@ -1,2 +1,60 @@
-﻿  main.cpp
-  MyEngine.vcxproj -> D:\Users\2312004\Documents\MyEngine\x64\Debug\MyEngine.exe
+﻿  D3D12Renderer.cpp
+  GameObject.cpp
+  main.cpp
+D:\Users\2312004\Documents\MyEngine\MyEngine\GameObject.cpp(146,25): error C2039: 'Render': 'Component' のメンバーではありません
+      D:\Users\2312004\Documents\MyEngine\MyEngine\Component.h(7,7):
+      'Component' の宣言を確認してください
+  
+  Mesh.cpp
+  MeshRendererComponent.cpp
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.h(13,8): error C2011: 'Vertex': 'struct' 型の再定義
+  (ソース ファイル 'MeshRendererComponent.cpp' をコンパイルしています)
+      D:\Users\2312004\Documents\MyEngine\MyEngine\Mesh.h(24,8):
+      'Vertex' の宣言を確認してください
+  
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.h(19,8): error C2011: 'MeshData': 'struct' 型の再定義
+  (ソース ファイル 'MeshRendererComponent.cpp' をコンパイルしています)
+      D:\Users\2312004\Documents\MyEngine\MyEngine\Mesh.h(34,8):
+      'MeshData' の宣言を確認してください
+  
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.h(27,7): error C2011: 'MeshRendererComponent': 'class' 型の再定義
+  (ソース ファイル 'MeshRendererComponent.cpp' をコンパイルしています)
+      D:\Users\2312004\Documents\MyEngine\MyEngine\Mesh.h(45,7):
+      'MeshRendererComponent' の宣言を確認してください
+  
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(5,24): error C2027: 認識できない型 'MeshRendererComponent' が使われています。
+      D:\Users\2312004\Documents\MyEngine\MyEngine\Mesh.h(45,7):
+      'MeshRendererComponent' の宣言を確認してください
+  
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(5,24): error C4430: 型指定子がありません - int と仮定しました。メモ: C++ は int を既定値としてサポートしていません
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(6,17): error C2653: 'ComponentType': 識別子がクラス名でも名前空間名でもありません。
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(6,32): error C2065: 'MeshRenderer': 定義されていない識別子です。
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(7,1): error C2550: '{ctor}': コンストラクターの初期化子リストはコンストラクターの定義だけに許されます。
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(9,5): error C2065: 'VertexBufferView': 定義されていない識別子です。
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(10,5): error C2065: 'IndexBufferView': 定義されていない識別子です。
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(11,1): warning C4508: '{ctor}': 関数に戻り値の型が指定されていません。戻り値を void 型と見なします。
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(13,29): error C2027: 認識できない型 'MeshRendererComponent' が使われています。
+      D:\Users\2312004\Documents\MyEngine\MyEngine\Mesh.h(45,7):
+      'MeshRendererComponent' の宣言を確認してください
+  
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(15,5): error C2065: 'm_MeshData': 定義されていない識別子です。
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(16,5): error C2065: 'IndexCount': 定義されていない識別子です。
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(16,36): error C2027: 認識できない型 'MeshData' が使われています。
+      D:\Users\2312004\Documents\MyEngine\MyEngine\Mesh.h(34,8):
+      'MeshData' の宣言を確認してください
+  
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(19,29): error C2027: 認識できない型 'MeshRendererComponent' が使われています。
+      D:\Users\2312004\Documents\MyEngine\MyEngine\Mesh.h(45,7):
+      'MeshRendererComponent' の宣言を確認してください
+  
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(21,10): error C2065: 'm_Owner': 定義されていない識別子です。
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(21,22): error C2065: 'm_Owner': 定義されていない識別子です。
+D:\Users\2312004\Documents\MyEngine\MyEngine\MeshRendererComponent.cpp(23,24): error C2355: 'this': 静的でないメンバー関数の内部または静的でないデータ メンバー初期化子においてのみ参照できます
+  Scene.cpp
+D:\Users\2312004\Documents\MyEngine\MyEngine\Scene.cpp(110,22): error C2065: 'm_GameObjects': 定義されていない識別子です。
+D:\Users\2312004\Documents\MyEngine\MyEngine\Scene.cpp(110,16): error C2530: 'obj': 参照が初期化されずに宣言されています。
+D:\Users\2312004\Documents\MyEngine\MyEngine\Scene.cpp(110,16): error C3531: 'obj': 'auto' を含む型のシンボルには初期化子が必要です
+D:\Users\2312004\Documents\MyEngine\MyEngine\Scene.cpp(110,20): error C2143: 構文エラー: ';' が ':' の前にありません。
+D:\Users\2312004\Documents\MyEngine\MyEngine\Scene.cpp(110,35): error C2143: 構文エラー: ';' が ')' の前にありません。
+  SceneManager.cpp
+  コードを生成中...

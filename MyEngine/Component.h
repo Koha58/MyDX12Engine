@@ -20,22 +20,39 @@ public:
 
     ComponentType GetType() const { return m_Type; }
 
-    virtual void Initialize() {}
-    virtual void Update(float deltaTime) {}
-    virtual void Render() {}
+    // --- Unity風ライフサイクル ---
+    virtual void Awake() {}                    // 生成直後に1回だけ
+    virtual void OnEnable() {}                 // 有効化時
+    virtual void Start() {}                    // 最初のUpdate前に1回だけ
+    virtual void Update(float deltaTime) {}    // 毎フレーム
+    virtual void LateUpdate(float deltaTime) {}// Update後に毎フレーム
+    virtual void OnDisable() {}                // 無効化時
+    virtual void OnDestroy() {}                // 破棄時
 
-    // GameObjectが破棄されるときに呼ばれる
-    virtual void OnDestroy() {} // デフォルトは何もしない
-
-    // 追加：オーナー設定関数
+    // --- オーナー管理 ---
     void SetOwner(std::shared_ptr<GameObject> owner) { m_Owner = owner; }
-
-    // 追加：オーナー取得関数
     std::shared_ptr<GameObject> GetOwner() const { return m_Owner.lock(); }
+
+    // --- 状態管理 ---
+    bool IsEnabled() const { return m_Enabled; }
+    
+    // 有効/無効
+    void SetEnabled(bool enabled) {
+        if (m_Enabled != enabled) {
+            m_Enabled = enabled;
+            if (m_Enabled) OnEnable();
+            else OnDisable();
+        }
+    }
+
+    bool HasStarted() const { return m_Started; }
+    void MarkStarted() { m_Started = true; }
 
 protected:
     ComponentType m_Type;
-
-    // 追加：オーナーへの弱参照
     std::weak_ptr<GameObject> m_Owner;
+
+    // 状態フラグ
+    bool m_Started = false;  // Start() が呼ばれたかフラグ
+    bool m_Enabled = true;   // OnEnable / OnDisable 用
 };

@@ -14,6 +14,7 @@
 class Component;
 class MeshRendererComponent; // Mesh.h で定義される
 class Scene;
+class D3D12Renderer;
 
 
 // --- GameObjectクラス ---
@@ -44,7 +45,8 @@ public:
         // コンポーネントのshared_ptrを作成し、コンストラクタに引数を転送
         std::shared_ptr<T> component = std::make_shared<T>(std::forward<Args>(args)...);
         m_Components.push_back(component); // 内部のコンポーネントリストに追加
-        component->Initialize();           // コンポーネントのInitializeメソッドを呼び出す
+        component->Awake();                      // Initialize の代わりに Awake を呼ぶ
+        component->OnEnable();   // デフォルト有効なので OnEnable も呼ぶ
         return component;                  // 追加されたコンポーネントのshared_ptrを返す
     }
 
@@ -89,6 +91,11 @@ public:
     // GameObjectが破棄されるときに呼ぶ関数
     void Destroy();
 
+    void SetActive(bool active);
+    bool IsActive() const { return m_Active; }
+
+    void Render(class D3D12Renderer* renderer);
+
     // GameObjectの更新ロジック
     // シーンの更新ループから呼ばれ、自身と子オブジェクト、アタッチされたコンポーネントを更新する
     // @param deltaTime: 前のフレームからの経過時間
@@ -109,6 +116,8 @@ private:
     std::weak_ptr<Scene> m_Scene; // 自分が所属するシーン
 
     bool m_Destroyed = false;
+
+    bool m_Active = true; // デフォルトは有効
 
     // Sceneクラスがm_Parentにアクセスできるようにフレンド宣言
     // SceneがGameObjectの親子関係を管理する際に必要となる

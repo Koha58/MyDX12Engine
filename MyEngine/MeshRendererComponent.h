@@ -1,10 +1,14 @@
 #pragma once
 #include "Component.h"
+#include "Mesh.h"
 #include <vector>
 #include <DirectXMath.h>
 #include <wrl/client.h>
 #include <d3d12.h>
 #include "d3dx12.h"
+
+
+class D3D12Renderer;
 
 struct Vertex
 {
@@ -31,7 +35,9 @@ public:
     virtual ~MeshRendererComponent() = default;
 
     void SetMesh(const MeshData& meshData);
-    virtual void Initialize() override {}
+
+    // •`‰æˆ—‚ğ’Ç‰Á
+    void Render(D3D12Renderer* renderer);
 
 private:
     MeshData m_MeshData;

@@ -21,6 +21,12 @@ void Scene::AddGameObject(std::shared_ptr<GameObject> gameObject,
             m_RootGameObjects.push_back(gameObject);
         }
     }
+
+    // Componentにオーナーを設定し、Awake()を呼ぶ
+    for (auto& comp : gameObject->m_Components) {
+        comp->SetOwner(gameObject);
+        comp->Awake();
+    }
 }
 
 void Scene::RemoveGameObject(std::shared_ptr<GameObject> gameObject)
@@ -55,7 +61,7 @@ void Scene::DestroyAllGameObjects() {
     // m_GameObjects を m_RootGameObjects に変更
     for (const auto& obj : m_RootGameObjects) {
         if (obj) {
-            obj->Destroy();
+            DestroyGameObject(obj); // DestroyQueue に積む
         }
     }
     m_RootGameObjects.clear(); // こちらも合わせて変更
@@ -87,9 +93,41 @@ void Scene::ExecuteDestroy(std::shared_ptr<GameObject> gameObject)
     gameObject->m_Scene.reset();
 }
 
+void Scene::SetActive(bool active)
+{
+    if (m_Active == active) return;
+    m_Active = active;
+
+    // ルート GameObject すべてに伝播
+    for (auto& go : m_RootGameObjects)
+    {
+        if (go) go->SetActive(active);
+    }
+}
+
+void Scene::Render(D3D12Renderer* renderer)
+{
+    for (auto& obj : m_GameObjects)
+    {
+        if (obj) obj->Render(renderer);
+    }
+}
+
+
 void Scene::Update(float deltaTime)
 {
     for (const auto& go : m_RootGameObjects) {
         go->Update(deltaTime);
+    }
+
+    // Update 後に Destroy キューを処理（Unity風の遅延実行）
+    if (!m_DestroyQueue.empty()) {
+        for (auto& go : m_DestroyQueue) {
+            if (go) {
+                go->Destroy();        // コンポーネントに OnDestroy 通知
+                ExecuteDestroy(go);   // シーンの管理リストから除去
+            }
+        }
+        m_DestroyQueue.clear();
     }
 }
