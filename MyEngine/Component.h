@@ -29,6 +29,8 @@ public:
     virtual void OnDisable() {}                // 無効化時
     virtual void OnDestroy() {}                // 破棄時
 
+    virtual void Render(class D3D12Renderer* renderer) {}
+
     // --- オーナー管理 ---
     void SetOwner(std::shared_ptr<GameObject> owner) { m_Owner = owner; }
     std::shared_ptr<GameObject> GetOwner() const { return m_Owner.lock(); }

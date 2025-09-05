@@ -190,10 +190,12 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
             float deltaTime = 1.0f / 60.0f;
             elapsedTime += deltaTime;
 
-            // 2秒ごとに Cube2 のアクティブ切替
+            // 2秒ごとに Cube2 の非表示/表示切替
+            elapsedTime += deltaTime;
             if (elapsedTime >= 2.0f)
             {
-                cube2->SetActive(!cube2->IsActive());
+                bool active = cube2->IsActive();
+                mainScene->SetGameObjectActive(cube2, !active); // Scene と GameObject の状態を同期
                 elapsedTime = 0.0f;
             }
 

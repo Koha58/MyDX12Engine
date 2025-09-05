@@ -32,7 +32,7 @@ GameObject::~GameObject()
 // @param deltaTime: 前のフレームからの経過時間
 void GameObject::Update(float deltaTime)
 {
-    if (m_Destroyed || !m_Active) return;
+    if (m_Destroyed || !IsActive()) return;
 
     // 子オブジェクトを先に更新
     for (auto& child : m_Children) {
@@ -97,7 +97,7 @@ void GameObject::RemoveChild(std::shared_ptr<GameObject> child)
 
 void GameObject::SetActive(bool active)
 {
-    if (m_Active == active) return; // 状態が変わらないなら何もしない
+    if (m_Active == active) return;
     m_Active = active;
 
     // コンポーネントに通知
@@ -108,11 +108,41 @@ void GameObject::SetActive(bool active)
         else comp->OnDisable();
     }
 
-    // 子オブジェクトにも再帰的に伝える
+    // Scene管理リストに反映
+    if (auto scene = m_Scene.lock())
+    {
+        if (m_Active)
+        {
+            if (scene && !scene->ContainsRootGameObject(shared_from_this())) {
+                scene->AddGameObject(shared_from_this());
+            }
+        }
+        else
+        {
+            scene->RemoveGameObject(shared_from_this());
+        }
+    }
+
+    // 子オブジェクトも再帰的に適用
     for (auto& child : m_Children)
     {
         if (child) child->SetActive(active);
     }
+}
+
+
+bool GameObject::IsActive() const
+{
+    // 自分が無効なら false
+    if (!m_Active) return false;
+
+    // 親が無効なら自分も無効
+    auto parent = m_Parent.lock();
+    if (parent) {
+        return parent->IsActive();
+    }
+
+    return true;
 }
 
 

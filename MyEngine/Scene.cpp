@@ -93,6 +93,36 @@ void Scene::ExecuteDestroy(std::shared_ptr<GameObject> gameObject)
     gameObject->m_Scene.reset();
 }
 
+void Scene::SetGameObjectActive(std::shared_ptr<GameObject> gameObject, bool active)
+{
+    if (!gameObject) return;
+
+    if (active)
+    {
+        // Scene に未登録なら追加
+        if (std::find(m_RootGameObjects.begin(), m_RootGameObjects.end(), gameObject)
+            == m_RootGameObjects.end())
+        {
+            AddGameObject(gameObject);
+        }
+    }
+    else
+    {
+        // Scene から削除
+        RemoveGameObject(gameObject);
+    }
+
+    // GameObject 側のアクティブフラグを更新
+    gameObject->m_Active = active;
+
+    // 子オブジェクトも再帰的に同様に設定
+    for (auto& child : gameObject->GetChildren())
+    {
+        SetGameObjectActive(child, active);
+    }
+}
+
+
 void Scene::SetActive(bool active)
 {
     if (m_Active == active) return;
@@ -107,7 +137,7 @@ void Scene::SetActive(bool active)
 
 void Scene::Render(D3D12Renderer* renderer)
 {
-    for (auto& obj : m_GameObjects)
+    for (auto& obj : m_RootGameObjects)
     {
         if (obj) obj->Render(renderer);
     }
@@ -117,7 +147,9 @@ void Scene::Render(D3D12Renderer* renderer)
 void Scene::Update(float deltaTime)
 {
     for (const auto& go : m_RootGameObjects) {
-        go->Update(deltaTime);
+        if (go && go->IsActive()) {
+            go->Update(deltaTime);
+        }
     }
 
     // Update 後に Destroy キューを処理（Unity風の遅延実行）

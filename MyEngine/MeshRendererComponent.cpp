@@ -5,7 +5,6 @@
 MeshRendererComponent::MeshRendererComponent()
     : Component(ComponentType::MeshRenderer), IndexCount(0)
 {
-    // 必ずゼロ初期化しておく
     ZeroMemory(&VertexBufferView, sizeof(VertexBufferView));
     ZeroMemory(&IndexBufferView, sizeof(IndexBufferView));
 }
@@ -18,7 +17,9 @@ void MeshRendererComponent::SetMesh(const MeshData& meshData)
 
 void MeshRendererComponent::Render(D3D12Renderer* renderer)
 {
-    if (!m_Owner || !m_Owner->IsActive()) return;
-
-    renderer->DrawMesh(this); // ✅ Renderer に描画依頼
+    auto owner = m_Owner.lock();
+    if (owner && owner->IsActive())
+    {
+        renderer->DrawMesh(this);
+    }
 }

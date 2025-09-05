@@ -92,7 +92,7 @@ public:
     void Destroy();
 
     void SetActive(bool active);
-    bool IsActive() const { return m_Active; }
+    bool IsActive() const;
 
     void Render(class D3D12Renderer* renderer);
 

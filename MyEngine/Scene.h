@@ -22,6 +22,13 @@ public:
     void SetActive(bool active); // シーン全体を有効/無効にする
     bool IsActive() const { return m_Active; }
 
+    bool ContainsRootGameObject(std::shared_ptr<GameObject> obj) const {
+        return std::find(m_RootGameObjects.begin(), m_RootGameObjects.end(), obj) != m_RootGameObjects.end();
+    }
+
+    // GameObject のアクティブ状態を Scene 管理リストと同期させて切り替える
+    void SetGameObjectActive(std::shared_ptr<GameObject> gameObject, bool active);
+
     void Render(D3D12Renderer* renderer);
 
     // シーンにルートGameObjectを追加する

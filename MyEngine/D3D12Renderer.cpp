@@ -36,7 +36,10 @@ const UINT MaxObjects = 100;
 
 // D3D12Rendererクラスのコンストラクタ
 D3D12Renderer::D3D12Renderer()
-    : m_Width(0), m_Height(0), frameIndex(0), fenceValue(0), fenceEvent(nullptr), m_pCbvDataBegin(nullptr), m_frameCount(0)
+    : m_Width(0), m_Height(0), frameIndex(0), fenceValue(0), fenceEvent(nullptr), m_pCbvDataBegin(nullptr), m_frameCount(0), rtvDescriptorSize(0),
+    m_ViewMatrix(DirectX::XMMatrixIdentity()),      // 単位行列で初期化
+    m_ProjectionMatrix(DirectX::XMMatrixIdentity()), // 単位行列で初期化
+    m_constantBufferData({}) // 構造体をゼロ初期化
 {
     // メンバ変数を初期化
 }
@@ -320,11 +323,11 @@ bool D3D12Renderer::CreatePipelineState()
 {
     // ルートシグネチャの作成
     // ディスクリプタレンジを定義 (CBVを1つ、シェーダーレジスタ0番にバインド)
-    CD3DX12_DESCRIPTOR_RANGE ranges[1];
+    CD3DX12_DESCRIPTOR_RANGE ranges[1] = {}; // ここで配列全体をゼロ初期化
     ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // CBVを1つ、レジスタb0に
 
     // ルートパラメータを定義 (ディスクリプタテーブルを1つ)
-    CD3DX12_ROOT_PARAMETER rootParameters[1];
+    CD3DX12_ROOT_PARAMETER rootParameters[1] = {}; // ここで配列全体をゼロ初期化
     rootParameters[0].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_ALL); // 全てのシェーダーから見えるように
 
     // ルートシグネチャの記述を設定
