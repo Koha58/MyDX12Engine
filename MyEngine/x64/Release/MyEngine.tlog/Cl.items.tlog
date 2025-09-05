@@ -1,4 +1,9 @@
+C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\Component.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Release\Component.obj
 C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\D3D12Renderer.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Release\D3D12Renderer.obj
 C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\GameObject.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Release\GameObject.obj
 C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\main.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Release\main.obj
 C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\Mesh.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Release\Mesh.obj
+C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\MeshRendererComponent.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Release\MeshRendererComponent.obj
+C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\Scene.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Release\Scene.obj
+C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\SceneManager.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Release\SceneManager.obj
+C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\TransformComponent.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Release\TransformComponent.obj

@@ -1,62 +1,74 @@
-#include "GameObject.h" // GameObjectクラスの定義を含むヘッダーファイル
+#include "GameObject.h" // GameObjectクラスの定義
 #include "Scene.h"
 #include "Component.h"
 #include "TransformComponent.h"
-#include <algorithm>    // std::removeアルゴリズムを使用するためにインクルード
+#include <algorithm>    // std::remove を使用するためにインクルード
 
-// --- GameObjectクラスの実装 ---
+// =====================================================
+// GameObject クラスの実装
+// =====================================================
 
-// GameObjectのコンストラクタ
-// @param name: GameObjectに与えられる名前
+// -----------------------------------------------------
+// コンストラクタ
+// @param name : GameObject に与えられる名前
+// -----------------------------------------------------
 GameObject::GameObject(const std::string& name)
-    : Name(name) // GameObjectの名前を初期化
+    : Name(name) // 名前を初期化
 {
-    // すべてのGameObjectはTransformComponentを持つことが前提。
-    // AddComponentを通じてTransformComponentを追加し、Transformポインタに保持する。
-    // これにより、TransformComponentはGameObjectの寿命管理下に入る。
+    // すべての GameObject は TransformComponent を必ず持つ。
+    // → AddComponent 経由で生成し、Transform メンバに保持。
+    //   これにより、座標/回転/スケール情報を持たない GameObject は存在しない設計になる。
     Transform = AddComponent<TransformComponent>();
 }
 
-// GameObjectのデストラクタ
+// -----------------------------------------------------
+// デストラクタ
+// -----------------------------------------------------
 GameObject::~GameObject()
 {
-    // このGameObjectが破棄される際、そのすべての子オブジェクトの親ポインタをクリアする。
-    // これにより、子オブジェクトが「親なし」の状態になり、無効な親ポインタへのアクセスを防ぐ。
+    // 破棄時に子オブジェクトの親ポインタをクリアしておく。
+    // → dangling weak_ptr（親が既に解放済なのに参照し続ける）を防ぐ。
     for (const auto& child : m_Children)
     {
-        child->m_Parent.reset(); // 子の親ポインタを解放
+        child->m_Parent.reset();
     }
 }
 
-// GameObjectとそのコンポーネント、子オブジェクトを更新する
-// @param deltaTime: 前のフレームからの経過時間
+// -----------------------------------------------------
+// Update
+// ・自身と子オブジェクトを更新する
+// ・Scene の更新ループから呼ばれる
+// @param deltaTime : 前フレームからの経過時間
+// -----------------------------------------------------
 void GameObject::Update(float deltaTime)
 {
-    if (m_Destroyed || !IsActive()) return;
+    if (m_Destroyed || !IsActive()) return; // 無効/破棄済みなら処理しない
 
-    // 子オブジェクトを先に更新
+    // --- 子オブジェクトの更新 ---
+    // 再帰的に呼ぶことでツリー構造全体が更新される
     for (auto& child : m_Children) {
         child->Update(deltaTime);
     }
 
-    // コンポーネント更新
+    // --- コンポーネント更新 ---
     for (auto& comp : m_Components)
     {
         if (!comp) continue;
 
-        // Start は一度だけ呼ぶ
+        // Start は最初の Update 前に一度だけ呼ぶ（Unityライク）
         if (!comp->HasStarted()) {
             comp->Start();
             comp->MarkStarted();
         }
 
-        // 有効な場合のみ Update
+        // 有効状態のコンポーネントのみ Update
         if (comp->IsEnabled()) {
             comp->Update(deltaTime);
         }
     }
 
-    // LateUpdate
+    // --- LateUpdate ---
+    // Update の後処理が必要な場合に呼ばれる
     for (auto& comp : m_Components)
     {
         if (comp && comp->IsEnabled()) {
@@ -65,42 +77,54 @@ void GameObject::Update(float deltaTime)
     }
 }
 
-// このGameObjectに子オブジェクトを追加する
-// @param child: 追加するGameObjectのshared_ptr
+// -----------------------------------------------------
+// 子オブジェクトの追加
+// @param child : 追加する GameObject
+// -----------------------------------------------------
 void GameObject::AddChild(std::shared_ptr<GameObject> child)
 {
-    // 追加しようとしている子オブジェクトに既に親がいるかチェック
-    if (child->m_Parent.lock()) // weak_ptrをshared_ptrに変換して親オブジェクトにアクセス
+    // すでに親がある場合は、その親から取り外す
+    if (child->m_Parent.lock())
     {
-        // 既に親がいる場合は、その親から子オブジェクトを切り離す
         child->m_Parent.lock()->RemoveChild(child);
     }
-    m_Children.push_back(child);       // 子オブジェクトのリストに追加
-    child->m_Parent = shared_from_this(); // 子オブジェクトの親ポインタをこのオブジェクトに設定
+
+    // 自分の子リストに追加し、親ポインタを設定
+    m_Children.push_back(child);
+    child->m_Parent = shared_from_this();
 }
 
-// このGameObjectから子オブジェクトを削除する
-// @param child: 削除するGameObjectのshared_ptr
+// -----------------------------------------------------
+// 子オブジェクトの削除
+// @param child : 削除対象
+// -----------------------------------------------------
 void GameObject::RemoveChild(std::shared_ptr<GameObject> child)
 {
-    // m_Childrenリストから指定された子オブジェクトを削除
-    // std::removeは指定された値をリストの末尾に移動させ、新しい論理的な終端を返す
-    // eraseはその論理的な終端から物理的な終端までを削除する
-    m_Children.erase(std::remove(m_Children.begin(), m_Children.end(), child), m_Children.end());
-    child->m_Parent.reset(); // 子オブジェクトの親ポインタをクリアする
+    // remove-erase イディオムで削除
+    m_Children.erase(
+        std::remove(m_Children.begin(), m_Children.end(), child),
+        m_Children.end());
 
-    // 親から外れたら Scene のルートに戻す
+    // 親ポインタをクリア
+    child->m_Parent.reset();
+
+    // 親から外れたオブジェクトは Scene のルートに戻す
     if (auto scene = child->m_Scene.lock()) {
         scene->AddGameObject(child, nullptr);
     }
 }
 
+// -----------------------------------------------------
+// Active 状態の設定
+// ・自身と子の OnEnable/OnDisable を呼び出す
+// ・Scene 内の管理リストに反映
+// -----------------------------------------------------
 void GameObject::SetActive(bool active)
 {
-    if (m_Active == active) return;
+    if (m_Active == active) return; // 変化なしなら何もしない
     m_Active = active;
 
-    // コンポーネントに通知
+    // --- コンポーネントに通知 ---
     for (auto& comp : m_Components)
     {
         if (!comp) continue;
@@ -108,35 +132,39 @@ void GameObject::SetActive(bool active)
         else comp->OnDisable();
     }
 
-    // Scene管理リストに反映
+    // --- Scene 管理に反映 ---
     if (auto scene = m_Scene.lock())
     {
         if (m_Active)
         {
-            if (scene && !scene->ContainsRootGameObject(shared_from_this())) {
+            // Scene のルートリストに存在しないなら追加
+            if (!scene->ContainsRootGameObject(shared_from_this())) {
                 scene->AddGameObject(shared_from_this());
             }
         }
         else
         {
+            // 無効化されたら Scene の管理対象から外す
             scene->RemoveGameObject(shared_from_this());
         }
     }
 
-    // 子オブジェクトも再帰的に適用
+    // --- 子オブジェクトにも再帰的に適用 ---
     for (auto& child : m_Children)
     {
         if (child) child->SetActive(active);
     }
 }
 
-
+// -----------------------------------------------------
+// Active 状態の判定
+// ・自身が無効なら false
+// ・親が無効なら子も無効
+// -----------------------------------------------------
 bool GameObject::IsActive() const
 {
-    // 自分が無効なら false
     if (!m_Active) return false;
 
-    // 親が無効なら自分も無効
     auto parent = m_Parent.lock();
     if (parent) {
         return parent->IsActive();
@@ -145,20 +173,24 @@ bool GameObject::IsActive() const
     return true;
 }
 
-
+// -----------------------------------------------------
+// Destroy
+// ・コンポーネント/子を破棄し OnDestroy を呼ぶ
+// ・破棄済みなら何もしない
+// -----------------------------------------------------
 void GameObject::Destroy()
 {
-    if (m_Destroyed) return; // 既に破棄済みなら何もしない
+    if (m_Destroyed) return;
     m_Destroyed = true;
 
-    // コンポーネントに OnDestroy を通知
+    // --- コンポーネント破棄 ---
     for (auto& comp : m_Components)
     {
         comp->OnDestroy();
     }
     m_Components.clear();
 
-    // 子オブジェクトを再帰的に破棄
+    // --- 子オブジェクトも再帰的に破棄 ---
     for (auto& child : m_Children)
     {
         child->Destroy();
@@ -166,21 +198,23 @@ void GameObject::Destroy()
     m_Children.clear();
 }
 
+// -----------------------------------------------------
+// Render
+// ・自身のコンポーネント描画 → 子オブジェクト描画
+// -----------------------------------------------------
 void GameObject::Render(D3D12Renderer* renderer)
 {
     if (!m_Active) return;
 
-    // コンポーネント描画
+    // --- コンポーネントの描画 ---
     for (auto& comp : m_Components)
     {
         if (comp) comp->Render(renderer);
     }
 
-    // 子オブジェクトも再帰的に描画
+    // --- 子オブジェクトの描画 ---
     for (auto& child : m_Children)
     {
         if (child) child->Render(renderer);
     }
 }
-
-
