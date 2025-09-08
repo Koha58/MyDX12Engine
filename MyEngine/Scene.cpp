@@ -84,7 +84,7 @@ void Scene::DestroyAllGameObjects() {
     // すべてのルートを破棄予約（子は ExecuteDestroy で再帰的に処理される）
     for (const auto& obj : m_RootGameObjects) {
         if (obj) {
-            DestroyGameObject(obj);
+            obj->Destroy(); // OnDestroy が呼ばれる
         }
     }
     // ルート配列は空に（実データの破棄は Update 終了時に行われる）
@@ -141,7 +141,7 @@ void Scene::SetGameObjectActive(std::shared_ptr<GameObject> gameObject, bool act
     }
 
     // GameObject 側のフラグも同期（OnEnable/OnDisable を発火する設計なら SetActive 経由でもよい）
-    gameObject->m_Active = active;
+    gameObject->SetActive(active);
 
     // 子にも再帰適用（親が無効なら子も無効、という設計を明示化）
     for (auto& child : gameObject->GetChildren())

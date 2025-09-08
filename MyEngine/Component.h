@@ -22,6 +22,7 @@ public:
         None = 0,          // 汎用/未指定
         Transform,         // Transform コンポーネント
         MeshRenderer,      // MeshRenderer コンポーネント
+        Camera,
         MAX_COMPONENT_TYPES
     };
 

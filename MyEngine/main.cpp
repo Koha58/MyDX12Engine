@@ -10,6 +10,10 @@
 #include "Mesh.h"
 #include "Scene.h"
 #include "SceneManager.h"
+#include "Time.h"
+#include "Input.h"
+#include "CameraComponent.h"
+#include "CameraControllerComponent.h"
 
 // =============================
 // デバッグ用コンポーネント
@@ -83,6 +87,9 @@ private:
 // 今回は最低限、WM_DESTROY だけを処理している。
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    // Input システムに通知
+    Input::ProcessMessage(message, wParam, lParam);
+
     switch (message)
     {
     case WM_DESTROY:
@@ -211,14 +218,31 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     mainScene->AddGameObject(cube2);
 
     // -----------------------------
-    // 8. メインループ
+    // 8. カメラ用 GameObject 作成
+    // -----------------------------
+    auto cameraObj = std::make_shared<GameObject>("Camera");
+    cameraObj->Transform->Position = { 0.0f, 2.0f, -5.0f }; // 初期位置
+
+    // CameraComponent を追加
+    auto cameraComp = cameraObj->AddComponent<CameraComponent>(cameraObj.get());
+    cameraComp->SetAspect(static_cast<float>(ClientWidth) / ClientHeight);
+
+    // CameraControllerComponent を追加してマウス + WASD で操作可能にする
+    cameraObj->AddComponent<CameraControllerComponent>(cameraObj.get(), cameraComp.get()); // ← .get() を追加
+
+    // シーンに登録
+    mainScene->AddGameObject(cameraObj);
+
+
+    // -----------------------------
+    // 9. メインループ
     // -----------------------------
     MSG msg = { 0 };
     float elapsedTime = 0.0f; // Cube2 の表示/非表示切り替えに使う経過時間
 
+    // メインループ
     while (WM_QUIT != msg.message)
     {
-        // OS からのメッセージ処理（入力や終了リクエストなど）
         if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
         {
             TranslateMessage(&msg);
@@ -226,34 +250,60 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
         }
         else
         {
-            // 固定フレームレート想定（1/60秒ごと）
-            float deltaTime = 1.0f / 60.0f;
+            Time::Update();
 
-            // 経過時間を加算して、2秒おきに切り替える
-            elapsedTime += deltaTime;
-            if (elapsedTime >= 2.0f)
+            float dt = Time::GetDeltaTime();
+
+            // 例: Wキーで前進
+            //if (Input::GetKey(KeyCode::W))
+            //{
+            //    cube1->Transform->Position.z += 2.0f * dt;
+            //}
+
+            // 例: 左クリックでログ
+            if (Input::GetMouseButtonDown(MouseButton::Left))
             {
-                // Cube2 のアクティブ状態を反転させる
-                bool active = cube2->IsActive();
-                mainScene->SetGameObjectActive(cube2, !active);
-                elapsedTime = 0.0f;
+                OutputDebugStringA("Left Mouse Clicked!\n");
             }
 
-            // 現在アクティブなシーンを更新
+            if (Input::GetKeyDown(KeyCode::Space))
+            {
+                bool active = cube2->IsActive();
+                mainScene->SetGameObjectActive(cube2, !active);
+            }
+
+            //if (Input::GetKeyDown(KeyCode::D))
+            //{
+            //    cube2->Destroy(); // OnDestroy が呼ばれる
+            //}
+
+
+            elapsedTime += dt; // 経過時間を更新する
+
+            if (elapsedTime >= 2.0f)
+            { 
+                // Cube2 のアクティブ状態を反転させる 
+                bool active = cube2->IsActive(); 
+                mainScene->SetGameObjectActive(cube2, !active); 
+                char buf[128];
+                sprintf_s(buf, "dt = %f, elapsedTime = %f\n", dt, elapsedTime);
+                OutputDebugStringA(buf);
+                elapsedTime = 0.0f; 
+            }
+
             auto activeScene = sceneManager.GetActiveScene();
             if (activeScene)
             {
-                activeScene->Update(deltaTime); // 各 GameObject/Component の Update を呼ぶ
-
-                // Cube1 を回転させる（毎フレーム Y 軸に 1度）
-                cube1->Transform->Rotation.y += DirectX::XMConvertToRadians(1.0f);
-
-                // レンダラーにシーンを渡して描画
+                activeScene->Update(dt);
                 renderer.SetScene(activeScene);
+                renderer.SetCamera(cameraComp);
                 renderer.Render();
             }
+
+            Input::Update();
         }
     }
+
 
     // -----------------------------
     // 9. 終了処理

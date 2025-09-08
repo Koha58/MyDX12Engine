@@ -531,10 +531,13 @@ void D3D12Renderer::Render()
 
     // カメラのビュー行列とプロジェクション行列を計算
     using namespace DirectX;
-    // ビュー行列: カメラの位置(0,0,-5)から原点(0,0,0)を見て、上方向は(0,1,0)
-    XMMATRIX viewMatrix = XMMatrixLookAtLH(XMVectorSet(0.0f, 0.0f, -5.0f, 1.0f), XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f), XMVectorSet(0.0f, 1.0f, 0.0f, 1.0f));
+    if (!m_Camera) return;
+
+    DirectX::XMMATRIX viewMatrix = m_Camera->GetViewMatrix();
+    DirectX::XMMATRIX projMatrix = m_Camera->GetProjectionMatrix();
+
     // プロジェクション行列: 視野角45度、アスペクト比、ニアクリップ面0.1、ファークリップ面100.0
-    XMMATRIX projMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.0f), (FLOAT)m_Width / (FLOAT)m_Height, 0.1f, 100.0f);
+    projMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.0f), (FLOAT)m_Width / (FLOAT)m_Height, 0.1f, 100.0f);
 
     // 現在のレンダーターゲットとデプスステンシルビューのCPUディスクリプタハンドルを取得
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart(), frameIndex, rtvDescriptorSize);

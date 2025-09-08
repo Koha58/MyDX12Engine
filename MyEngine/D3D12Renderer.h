@@ -14,6 +14,7 @@
 #include "Mesh.h"         // メッシュデータ構造とMeshRendererComponentを定義
 #include "Scene.h"
 #include "MeshRendererComponent.h"
+#include "CameraComponent.h"
 
 // Direct3D 12ヘルパーライブラリ (d3dx12.h)
 // このファイルは通常、Microsoft.Direct3D.D3D12 NuGetパッケージに含まれている
@@ -64,6 +65,8 @@ public:
     // レンダリング対象のシーンを設定する
     // @param scene: レンダリングするSceneオブジェクトのshared_ptr
     void SetScene(std::shared_ptr<Scene> scene) { m_CurrentScene = scene; }
+
+    void SetCamera(std::shared_ptr<CameraComponent> camera) { m_Camera = camera; }
 
     // GameObjectからMeshRendererComponentを検出し、
     // それに関連するD3D12リソース（頂点バッファ、インデックスバッファなど）を作成・初期化する
@@ -138,6 +141,8 @@ private:
 
     // 現在レンダリングされているシーンへのshared_ptr
     std::shared_ptr<Scene> m_CurrentScene;
+
+    std::shared_ptr<CameraComponent> m_Camera; // 現在レンダリングに使うカメラ
 
     // カメラのビュー行列とプロジェクション行列
     // 現時点ではD3D12Renderer内に直接保持されているが、
