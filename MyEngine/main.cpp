@@ -1,9 +1,28 @@
+// ============================================================================
+// main.cpp
+// 目的:
+//   - 最小限の D3D12 レンダリング環境で、シーン/ゲームオブジェクト/コンポーネントを
+//     どの順で初期化・更新・描画するかを一望できるようにする。
+// 特徴:
+//   - 「B案」ポリシー: AddComponent() 側で Awake/OnEnable を呼ぶ（Scene 側では Awake を呼ばない）
+//   - GameObject は GameObject::Create() ファクトリで生成（shared_from_this 安全化）
+//   - ウィンドウの「外枠サイズ」と「クライアントサイズ」を明確に分離
+//   - 実クライアントサイズからスワップチェイン/カメラアスペクトを構築（ズレ防止）
+//   - サンプル: キー/マウス入力、2秒ごとの Active 切替、簡単な移動コンポーネント
+//
+// よくある落とし穴:
+//   - std::make_shared 直呼びで GameObject を作ると、コンストラクタ内の shared_from_this() が
+//     使えず std::bad_weak_ptr になることがある → ファクトリ関数で回避。
+//   - AdjustWindowRect の戻りは「外枠込み」のサイズ。DirectX のビューポートや投影行列の
+//     アスペクト計算には GetClientRect の「クライアントサイズ」を使う。
+//   - ライフサイクルを複数箇所で呼ぶと二重化する（Awake/Start/OnEnable）。呼び主を一本化する。
+// ============================================================================
+
 #include <windows.h>
 #include <string>
 #include <memory>
-#include <iostream>
-#include <sal.h>
 #include <cmath>
+#include <sal.h> // VS の静的解析用アノテーション（_In_ など）
 
 #include "D3D12Renderer.h"
 #include "GameObject.h"
@@ -15,315 +34,250 @@
 #include "CameraComponent.h"
 #include "CameraControllerComponent.h"
 
-// =============================
+// ============================================================================
 // デバッグ用コンポーネント
-// =============================
-// GameObject にアタッチして、ライフサイクルイベント
-// （OnEnable/OnDisable/OnDestroy）が正しく呼ばれるかを確認するためのサンプル。
+// 役割:
+//   - コンポーネントのライフサイクル（OnEnable/OnDisable/OnDestroy）が
+//     想定タイミングで呼ばれているかを目視確認するための最小実装。
+// 注意:
+//   - 本番ではメッセージボックスは邪魔になるのでログのみにするなど調整。
+// ============================================================================
 class TestComponent : public Component
 {
 public:
     TestComponent() : Component(ComponentType::None) {}
-
-    // コンポーネントが有効化された直後に呼ばれる
-    void OnEnable() override {
-        OutputDebugStringA("TestComponent: OnEnable\n"); // Visual Studio の出力ウィンドウにログ
-    }
-
-    // コンポーネントが無効化された直後に呼ばれる
-    void OnDisable() override {
-        OutputDebugStringA("TestComponent: OnDisable\n");
-    }
-
-    // コンポーネントが破棄される直前に呼ばれる
-    void OnDestroy() override {
-        // OnDestroy が呼ばれていることを分かりやすく確認するためにダイアログを表示
-        MessageBoxA(nullptr, "TestComponent: OnDestroy called!", "Debug", MB_OK);
-    }
+    void OnEnable()  override { OutputDebugStringA("TestComponent: OnEnable\n"); }
+    void OnDisable() override { OutputDebugStringA("TestComponent: OnDisable\n"); }
+    void OnDestroy() override { MessageBoxA(nullptr, "TestComponent: OnDestroy called!", "Debug", MB_OK); }
 };
 
-// =============================
-// Cube2 移動用コンポーネント
-// =============================
-// サイン波関数を使ってオブジェクトを前後に動かすコンポーネント。
-// 「移動」などの挙動はコンポーネント化することで、再利用性や管理がしやすくなる。
+// ============================================================================
+// MoveComponent
+// 役割:
+//   - 所有 GameObject の z 位置をサイン波で往復させるシンプルな挙動。
+// 設計ノート:
+//   - 「挙動をコンポーネント化」して再利用しやすくする方針の例。
+// ============================================================================
 class MoveComponent : public Component
 {
 public:
-    MoveComponent(GameObject* owner) : Component(ComponentType::None), m_Owner(owner) {}
+    explicit MoveComponent(GameObject* owner) : Component(ComponentType::None), m_Owner(owner) {}
 
-    // 毎フレーム呼ばれる更新処理
-    void Update(float deltaTime) override {
-        // GameObject が存在し、かつアクティブ状態のときだけ動作させる
-        if (!m_Owner || !m_Owner->IsActive()) return;
-
-        // sin 波を利用して z 座標を周期的に変化させる
-        // m_FrameCount に応じて値が増えるので、結果として往復運動になる
-        m_Owner->Transform->Position.z = sin(m_FrameCount * 0.05f) * 2.0f;
-
-        // フレームごとにカウントを進める
-        m_FrameCount++;
+    // Update は Scene → GameObject → Component の順に伝播する
+    void Update(float /*dt*/) override {
+        if (!m_Owner || !m_Owner->IsActive()) return; // 無効化/破棄済みなら何もしない
+        m_Owner->Transform->Position.z = std::sin(m_Frame * 0.05f) * 2.0f; // 速度0.05, 振幅2.0
+        ++m_Frame;
     }
 
-    // 有効化された直後
-    void OnEnable() override {
-        OutputDebugStringA("MoveComponent: OnEnable\n");
-    }
-
-    // 無効化された直後
-    void OnDisable() override {
-        OutputDebugStringA("MoveComponent: OnDisable\n");
-    }
+    void OnEnable()  override { OutputDebugStringA("MoveComponent: OnEnable\n"); }
+    void OnDisable() override { OutputDebugStringA("MoveComponent: OnDisable\n"); }
 
 private:
-    GameObject* m_Owner = nullptr; // このコンポーネントを所有する GameObject への参照
-    int m_FrameCount = 0;          // フレームカウンタ（動きの周期を作るために使用）
+    GameObject* m_Owner = nullptr; // Transform へアクセスするための所有者参照
+    int m_Frame = 0;               // 経過フレーム（時間代替）
 };
 
-// =============================
-// ウィンドウプロシージャ
-// =============================
-// Windows が投げてくるメッセージ（ウィンドウが閉じられた、入力があった等）を処理する関数。
-// 今回は最低限、WM_DESTROY だけを処理している。
+// ============================================================================
+// WndProc: Win32 ウィンドウプロシージャ
+// 役割:
+//   - OS から届く入力/ウィンドウイベントを最初に受け止める。
+//   - 今回は最低限（入力転送/WM_DESTROY）だけ処理。
+// 重要:
+//   - Input::ProcessMessage() をここで必ず呼ぶ（押下・離上・座標などを内部に反映）。
+// ============================================================================
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    // Input システムに通知
-    Input::ProcessMessage(message, wParam, lParam);
+    Input::ProcessMessage(message, wParam, lParam); // 入力の反映
 
-    switch (message)
-    {
+    switch (message) {
     case WM_DESTROY:
-        // ウィンドウが閉じられたとき、アプリケーション終了を指示する
-        PostQuitMessage(0);
-        break;
+        PostQuitMessage(0); // メインループ脱出指示
+        return 0;
     default:
-        // その他のメッセージは既定処理に渡す
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
-    return 0;
 }
 
-// =============================
-// キューブメッシュ生成
-// =============================
-// 頂点カラーを持つ単純な立方体を生成。
-// 実際のゲームでは FBX など外部データを使うが、ここでは手書きで定義している。
+// ============================================================================
+// ユーティリティ: 単純なカラフル立方体メッシュを手組みで生成
+// 注意:
+//   - 本格的には GLTF/FBX からロードしてタンジェント等も持たせる。
+//   - この例では 8頂点＋インデックスで簡素化（面ごとの固有色を厳密に出すなら面ごと頂点重複が理想）。
+// ============================================================================
 MeshData CreateCubeMeshData()
 {
-    MeshData meshData;
+    MeshData m;
 
-    // 立方体の頂点（位置 + 法線 + RGBA色）
-    meshData.Vertices = {
+    // 頂点（位置/法線/色）
+    m.Vertices = {
         // -Z 面
-        {{-0.5f,  0.5f, -0.5f}, {0,0,-1}, {1,0,0,1}}, // 赤
-        {{ 0.5f,  0.5f, -0.5f}, {0,0,-1}, {0,1,0,1}}, // 緑
-        {{-0.5f, -0.5f, -0.5f}, {0,0,-1}, {0,0,1,1}}, // 青
-        {{ 0.5f, -0.5f, -0.5f}, {0,0,-1}, {1,1,0,1}}, // 黄
-
+        {{-0.5f,  0.5f, -0.5f}, {0,0,-1}, {1,0,0,1}},
+        {{ 0.5f,  0.5f, -0.5f}, {0,0,-1}, {0,1,0,1}},
+        {{-0.5f, -0.5f, -0.5f}, {0,0,-1}, {0,0,1,1}},
+        {{ 0.5f, -0.5f, -0.5f}, {0,0,-1}, {1,1,0,1}},
         // +Z 面
-        {{-0.5f,  0.5f,  0.5f}, {0,0,1}, {0,1,1,1}},  // シアン
-        {{ 0.5f,  0.5f,  0.5f}, {0,0,1}, {1,0,1,1}},  // マゼンタ
-        {{-0.5f, -0.5f,  0.5f}, {0,0,1}, {0,0,0,1}},  // 黒
-        {{ 0.5f, -0.5f,  0.5f}, {0,0,1}, {1,1,1,1}},  // 白
+        {{-0.5f,  0.5f,  0.5f}, {0,0, 1}, {0,1,1,1}},
+        {{ 0.5f,  0.5f,  0.5f}, {0,0, 1}, {1,0,1,1}},
+        {{-0.5f, -0.5f,  0.5f}, {0,0, 1}, {0,0,0,1}},
+        {{ 0.5f, -0.5f,  0.5f}, {0,0, 1}, {1,1,1,1}},
     };
 
-    // インデックス（今まで通りでOK）
-    meshData.Indices = {
-        0,1,2, 1,3,2,   // -Z 面
-        4,6,5, 5,6,7,   // +Z 面
-        4,5,0, 5,1,0,   // +Y 面
-        2,3,6, 3,7,6,   // -Y 面
-        1,5,3, 5,7,3,   // +X 面
-        4,0,6, 0,2,6    // -X 面
+    // インデックス（三角形リスト）。左手座標系・表面が手前で CW 想定（PSO のカリングに合わせる）
+    m.Indices = {
+        0,1,2, 1,3,2,  // -Z
+        4,6,5, 5,6,7,  // +Z
+        4,5,0, 5,1,0,  // +Y
+        2,3,6, 3,7,6,  // -Y
+        1,5,3, 5,7,3,  // +X
+        4,0,6, 0,2,6   // -X
     };
 
-    return meshData;
+    return m;
 }
 
-
-// =============================
-// WinMain (アプリケーションのエントリーポイント)
-// =============================
-// Windows アプリとして最初に呼ばれる関数。
-// ウィンドウ作成 → DirectX 初期化 → ゲームループ → 終了処理 の流れ。
+// ============================================================================
+// WinMain: アプリエントリ
+// フロー:
+//  1) ウィンドウクラス登録 → 2) ウィンドウ生成 → 3) 入力・実クライアント取得
+//  4) D3D 初期化 → 5) シーン構築 → 6) メインループ（更新・描画） → 7) 終了処理
+// ============================================================================
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int nCmdShow)
 {
-    // -----------------------------
-    // 1. ウィンドウクラスの登録
-    // -----------------------------
+    // ---------------- 1) ウィンドウクラス登録 ----------------
+    // ※ ここを触るのはウィンドウの見た目/挙動を変えたい時（アイコン/カーソル/背景 等）
     const wchar_t CLASS_NAME[] = L"D3D12WindowClass";
-    WNDCLASS wc = {};
-    wc.lpfnWndProc = WndProc;           // このウィンドウに届くメッセージを処理する関数
-    wc.hInstance = hInstance;           // アプリケーションのインスタンス
-    wc.lpszClassName = CLASS_NAME;      // 識別用のクラス名
-    wc.hCursor = LoadCursor(nullptr, IDC_ARROW); // カーソル形状
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); // 背景色
-    RegisterClass(&wc);
 
-    // -----------------------------
-    // 2. ウィンドウ作成
-    // -----------------------------
-    RECT windowRect = { 0,0,800,600 };
-    AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, FALSE); // 枠も含めたウィンドウサイズに調整
-    const UINT ClientWidth = windowRect.right - windowRect.left;
-    const UINT ClientHeight = windowRect.bottom - windowRect.top;
+    WNDCLASS wc = {};
+    wc.lpfnWndProc = WndProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = CLASS_NAME;
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    RegisterClass(&wc); // 失敗時は GetLastError()
+
+    // ---------------- 2) ウィンドウ生成 ----------------
+    // 表示したいクライアント領域は 800x600。外枠ぶんは AdjustWindowRect で加算して作成する。
+    RECT wr = { 0, 0, 800, 600 };
+    AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);  // メニュー無し
+    const int outerW = wr.right - wr.left;             // 外枠込み幅
+    const int outerH = wr.bottom - wr.top;              // 外枠込み高
 
     HWND hWnd = CreateWindowEx(
         0, CLASS_NAME, L"DirectX12 Engine",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        ClientWidth, ClientHeight,
+        CW_USEDEFAULT, CW_USEDEFAULT, outerW, outerH,
         nullptr, nullptr, hInstance, nullptr);
 
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
 
-    // -----------------------------
-    // 3. DirectX12Renderer 初期化
-    // -----------------------------
-    // デバイス作成、スワップチェイン作成、レンダーターゲット用バッファの準備などを行う
-    D3D12Renderer renderer;
-    renderer.Initialize(hWnd, ClientWidth, ClientHeight);
+    // ---------------- 3) 入力初期化 & 実クライアント取得 ----------------
+    // ※ GetClientRect は描画対象ピクセル面のサイズ。これをビューポート/アスペクトに使う。
+    Input::Initialize();
 
-    // -----------------------------
-    // 4. シーンの作成と登録
-    // -----------------------------
+    RECT rc{};
+    GetClientRect(hWnd, &rc);
+    const UINT clientW = rc.right - rc.left;
+    const UINT clientH = rc.bottom - rc.top;
+
+    // ---------------- 4) D3D12 初期化 ----------------
+    // スワップチェイン／RTV/DSV など内部リソースは renderer 側で構築される。
+    D3D12Renderer renderer;
+    renderer.Initialize(hWnd, clientW, clientH);
+
+    // ---------------- 5) シーン構築 ----------------
+    // SceneManager は複数シーンの切替/保持を担う。ここでは "Main" を作って有効化。
     SceneManager sceneManager;
     auto mainScene = std::make_shared<Scene>("Main Scene");
-    sceneManager.AddScene("Main", mainScene);   // "Main" というキーで管理
-    sceneManager.SwitchScene("Main");           // このシーンをアクティブにする
+    sceneManager.AddScene("Main", mainScene);
+    sceneManager.SwitchScene("Main");
 
-    // -----------------------------
-    // 5. キューブ用メッシュの生成
-    // -----------------------------
-    MeshData cubeMeshData = CreateCubeMeshData();
+    // 立方体メッシュ（手組み）
+    MeshData cube = CreateCubeMeshData();
 
-    // -----------------------------
-    // 6. Cube1 作成
-    // -----------------------------
-    auto cube1 = std::make_shared<GameObject>("Cube1");
-    cube1->Transform->Position = { -2.0f,0.0f,0.0f }; // 左側に配置
-    cube1->AddComponent<TestComponent>();             // ライフサイクル確認用
-    auto meshRenderer1 = cube1->AddComponent<MeshRendererComponent>();
-    meshRenderer1->SetMesh(cubeMeshData);             // メッシュを設定
-    renderer.CreateMeshRendererResources(meshRenderer1); // GPU用リソース生成
+    // --- Cube1（左）: ライフサイクルログ付き ---
+    // 重要: GameObject::Create() を使う（shared_from_this 安全化）。
+    auto cube1 = GameObject::Create("Cube1");
+    cube1->Transform->Position = { -2.0f, 0.0f, 0.0f };
+    cube1->AddComponent<TestComponent>(); // OnEnable/Disable/Destroy のログ
+    auto mr1 = cube1->AddComponent<MeshRendererComponent>();
+    mr1->SetMesh(cube);
+    renderer.CreateMeshRendererResources(mr1); // VB/IB の GPU リソース準備
 
-    // -----------------------------
-    // 7. Cube2 作成
-    // -----------------------------
-    auto cube2 = std::make_shared<GameObject>("Cube2");
-    cube2->Transform->Position = { 2.0f,0.0f,0.0f }; // 右側に配置
-    auto meshRenderer2 = cube2->AddComponent<MeshRendererComponent>();
-    meshRenderer2->SetMesh(cubeMeshData);
-    renderer.CreateMeshRendererResources(meshRenderer2);
-    cube2->AddComponent<MoveComponent>(cube2.get());  // 移動用コンポーネントを追加
+    // --- Cube2（右）: サイン波で往復 ---
+    auto cube2 = GameObject::Create("Cube2");
+    cube2->Transform->Position = { 2.0f, 0.0f, 0.0f };
+    auto mr2 = cube2->AddComponent<MeshRendererComponent>();
+    mr2->SetMesh(cube);
+    renderer.CreateMeshRendererResources(mr2);
+    cube2->AddComponent<MoveComponent>(cube2.get()); // 所有者を渡す
 
-    // シーンにオブジェクトを登録
+    // シーンに登録（親なし＝ルート）
     mainScene->AddGameObject(cube1);
     mainScene->AddGameObject(cube2);
 
-    // -----------------------------
-    // 8. カメラ用 GameObject 作成
-    // -----------------------------
-    auto cameraObj = std::make_shared<GameObject>("Camera");
-    cameraObj->Transform->Position = { 0.0f, 2.0f, -5.0f }; // 初期位置
+    // --- カメラ（WASD + マウスで移動/回転できる） ---
+    auto camObj = GameObject::Create("Camera");
+    camObj->Transform->Position = { 0.0f, 2.0f, -5.0f }; // 俯瞰ぎみ
+    auto cam = camObj->AddComponent<CameraComponent>(camObj.get());
+    cam->SetAspect(static_cast<float>(clientW) / static_cast<float>(clientH)); // 実クライアント比
+    camObj->AddComponent<CameraControllerComponent>(camObj.get(), cam.get());
+    mainScene->AddGameObject(camObj);
 
-    // CameraComponent を追加
-    auto cameraComp = cameraObj->AddComponent<CameraComponent>(cameraObj.get());
-    cameraComp->SetAspect(static_cast<float>(ClientWidth) / ClientHeight);
+    // ---------------- 6) メインループ ----------------
+    // ループ構造:
+    //  - 可能なら OS メッセージを処理（非ブロッキング）
+    //  - それ以外の時間は 1フレーム進める（時間更新→入力参照→シーン更新→描画→入力スナップショット）
+    MSG msg = {};
+    float elapsed = 0.0f; // デモ用: 2秒ごとに Cube2 をトグルする
 
-    // CameraControllerComponent を追加してマウス + WASD で操作可能にする
-    cameraObj->AddComponent<CameraControllerComponent>(cameraObj.get(), cameraComp.get()); // ← .get() を追加
-
-    // シーンに登録
-    mainScene->AddGameObject(cameraObj);
-
-
-    // -----------------------------
-    // 9. メインループ
-    // -----------------------------
-    MSG msg = { 0 };
-    float elapsedTime = 0.0f; // Cube2 の表示/非表示切り替えに使う経過時間
-
-    // メインループ
-    while (WM_QUIT != msg.message)
-    {
-        if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
-        {
+    while (msg.message != WM_QUIT) {
+        if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
+            continue; // このフレームは OS メッセージ処理のみで終了
         }
-        else
-        {
-            Time::Update();
 
-            float dt = Time::GetDeltaTime();
+        // ---- 1) 時間更新 ----
+        Time::Update();
+        const float dt = Time::GetDeltaTime();
 
-            // 例: Wキーで前進
-            //if (Input::GetKey(KeyCode::W))
-            //{
-            //    cube1->Transform->Position.z += 2.0f * dt;
-            //}
-
-            // 例: 左クリックでログ
-            if (Input::GetMouseButtonDown(MouseButton::Left))
-            {
-                OutputDebugStringA("Left Mouse Clicked!\n");
-            }
-
-            if (Input::GetKeyDown(KeyCode::Space))
-            {
-                bool active = cube2->IsActive();
-                mainScene->SetGameObjectActive(cube2, !active);
-            }
-
-            //if (Input::GetKeyDown(KeyCode::D))
-            //{
-            //    cube2->Destroy(); // OnDestroy が呼ばれる
-            //}
-
-            if (Input::GetKey(KeyCode::LeftControl))
-            {
-                OutputDebugStringA("LeftControl Pressed!\n");
-            }
-
-
-            elapsedTime += dt; // 経過時間を更新する
-
-            if (elapsedTime >= 2.0f)
-            { 
-                // Cube2 のアクティブ状態を反転させる 
-                bool active = cube2->IsActive(); 
-                mainScene->SetGameObjectActive(cube2, !active); 
-                char buf[128];
-                sprintf_s(buf, "dt = %f, elapsedTime = %f\n", dt, elapsedTime);
-                OutputDebugStringA(buf);
-                elapsedTime = 0.0f; 
-            }
-
-            auto activeScene = sceneManager.GetActiveScene();
-            if (activeScene)
-            {
-                activeScene->Update(dt);
-                renderer.SetScene(activeScene);
-                renderer.SetCamera(cameraComp);
-                renderer.Render();
-            }
-
-            Input::Update();
+        // ---- 2) 入力例（必要に応じて自分の処理に置換）----
+        if (Input::GetMouseButtonDown(MouseButton::Left)) {
+            OutputDebugStringA("Left Mouse Clicked!\n");
         }
+        if (Input::GetKeyDown(KeyCode::Space)) {
+            mainScene->SetGameObjectActive(cube2, !cube2->IsActive()); // Space でトグル
+        }
+
+        // デモ: 2秒ごとに自動でトグル（Space と併用すると早く切り替わる可能性あり）
+        elapsed += dt;
+        if (elapsed >= 2.0f) {
+            mainScene->SetGameObjectActive(cube2, !cube2->IsActive());
+            elapsed = 0.0f;
+        }
+
+        // ---- 3) 更新＆描画 ----
+        if (auto scene = sceneManager.GetActiveScene()) {
+            scene->Update(dt);                 // ゲームロジック（親→子→各コンポーネント）
+            renderer.SetScene(scene);          // 今回描画するシーン
+            renderer.SetCamera(cam);           // 使用カメラ
+            renderer.Render();                 // D3D12 コマンド記録→実行→Present
+        }
+
+        // ---- 4) 入力スナップショット更新 ----
+        // 次フレームの GetKeyDown/GetKeyUp 判定のため、ここで「前フレーム状態」を確定させる。
+        Input::Update();
     }
 
-
-    // -----------------------------
-    // 9. 終了処理
-    // -----------------------------
-    if (auto activeScene = sceneManager.GetActiveScene())
-    {
-        activeScene->DestroyAllGameObjects(); // オブジェクトをすべて破棄し、OnDestroy を呼ぶ
+    // ---------------- 7) 終了処理 ----------------
+    // ここまで来るとウィンドウは閉じている。GPU 処理が残っている可能性があるので、
+    // renderer.Cleanup() 内で GPU 同期→リソース解放をする。
+    if (auto scene = sceneManager.GetActiveScene()) {
+        scene->DestroyAllGameObjects(); // OnDestroy を正しく呼びながら破棄
     }
-    renderer.Cleanup(); // DirectX のリソース解放
+    renderer.Cleanup();
 
-    // アプリ終了コードを返す
     return static_cast<int>(msg.wParam);
 }
