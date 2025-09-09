@@ -16,6 +16,8 @@ enum class KeyCode
     Right = VK_RIGHT,
     Up = VK_UP,
     Down = VK_DOWN,
+    LeftControl = VK_LCONTROL,
+    RightControl = VK_RCONTROL,
 };
 
 enum class MouseButton

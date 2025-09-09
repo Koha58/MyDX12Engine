@@ -84,11 +84,42 @@ void Input::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
     switch (message)
     {
     case WM_KEYDOWN:
-        m_CurrentKeys[(int)wParam] = true;
+    case WM_SYSKEYDOWN:
+    {
+        int vk = (int)wParam;
+
+        // Ctrl ”»’è
+        if (vk == VK_CONTROL)
+        {
+            bool isExtended = (lParam & (1 << 24)) != 0; // 24bit‚Å‰E‚©‚Ç‚¤‚©”»’è
+            vk = isExtended ? VK_RCONTROL : VK_LCONTROL;
+        }
+
+        m_CurrentKeys[vk] = true;
+
+        char buf[64];
+        sprintf_s(buf, "KeyDown: %d\n", vk);
+        OutputDebugStringA(buf);
         break;
+    }
     case WM_KEYUP:
-        m_CurrentKeys[(int)wParam] = false;
+    case WM_SYSKEYUP:
+    {
+        int vk = (int)wParam;
+
+        if (vk == VK_CONTROL)
+        {
+            bool isExtended = (lParam & (1 << 24)) != 0;
+            vk = isExtended ? VK_RCONTROL : VK_LCONTROL;
+        }
+
+        m_CurrentKeys[vk] = false;
+
+        char buf[64];
+        sprintf_s(buf, "KeyUp: %d\n", vk);
+        OutputDebugStringA(buf);
         break;
+    }
 
     case WM_LBUTTONDOWN: m_CurrentMouse[0] = true; break;
     case WM_LBUTTONUP:   m_CurrentMouse[0] = false; break;
@@ -103,3 +134,5 @@ void Input::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
         break;
     }
 }
+
+

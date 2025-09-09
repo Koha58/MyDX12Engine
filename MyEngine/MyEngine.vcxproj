@@ -154,6 +154,7 @@
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="MeshRendererComponent.h" />
     <ClInclude Include="Scene.h" />
+    <ClInclude Include="SceneConstantBuffer.h" />
     <ClInclude Include="SceneManager.h" />
     <ClInclude Include="Time.h" />
     <ClInclude Include="TransformComponent.h" />

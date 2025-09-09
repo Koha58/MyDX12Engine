@@ -1,4 +1,5 @@
 ﻿#include "D3D12Renderer.h" // D3D12Rendererクラスのヘッダーファイルをインクルード
+#include "SceneConstantBuffer.h"
 
 #include <stdexcept>   // std::runtime_errorを使用するためのヘッダー
 #include <d3dcompiler.h> // HLSLシェーダーのコンパイルに使用するD3DCompile関数を提供
@@ -353,40 +354,61 @@ bool D3D12Renderer::CreatePipelineState()
 
     // シェーダーソースコードを定義
     const char* vsSource = R"(
-cbuffer cb0 : register(b0) // 定数バッファ0
+cbuffer cb0 : register(b0)
 {
-    row_major float4x4 g_mvp; // モデルビュープロジェクション行列
+    row_major float4x4 g_mvp;   // MVP行列
+    float3 g_lightDir;          // 光源方向（正規化）
+    float  pad;                 // 16バイト境界合わせ用
 };
+
 struct VSInput
 {
-    float3 pos : POSITION; // 位置
-    float4 color : COLOR;  // 色
+    float3 pos    : POSITION; // 位置
+    float3 normal : NORMAL;   // 法線
+    float4 color  : COLOR;    // 頂点色
 };
+
 struct PSInput
 {
-    float4 pos : SV_POSITION; // 頂点シェーダーからの出力位置
-    float4 color : COLOR;     // 頂点シェーダーからの出力色
+    float4 pos    : SV_POSITION; // クリップ空間位置
+    float3 normal : NORMAL;      // 法線
+    float4 color  : COLOR;       // 頂点色
 };
+
 PSInput main(VSInput input)
 {
     PSInput output;
-    // 頂点位置をMVP行列で変換
-    output.pos = mul(float4(input.pos, 1.0f), g_mvp);
-    output.color = input.color; // 色をそのまま渡す
+    output.pos    = mul(float4(input.pos, 1.0f), g_mvp);
+    output.normal = normalize(input.normal);
+    output.color  = input.color;
     return output;
 }
 )";
+
     const char* psSource = R"(
+cbuffer cb0 : register(b0)
+{
+    row_major float4x4 g_mvp;
+    float3 g_lightDir;
+    float  pad;
+};
+
 struct PSInput
 {
-    float4 pos : SV_POSITION; // ピクセルシェーダーへの入力位置
-    float4 color : COLOR;     // ピクセルシェーダーへの入力色
+    float4 pos    : SV_POSITION;
+    float3 normal : NORMAL;
+    float4 color  : COLOR;
 };
-float4 main(PSInput input) : SV_TARGET // レンダーターゲットへの出力
+
+float4 main(PSInput input) : SV_TARGET
 {
-    return input.color; // 入力色をそのまま出力
+    // Lambert 拡散反射
+    float NdotL = max(dot(normalize(input.normal), -normalize(g_lightDir)), 0.0f);
+    float3 diffuse = input.color.rgb * NdotL;
+    return float4(diffuse, input.color.a);
 }
 )";
+
     ComPtr<ID3DBlob> vertexShader; // 頂点シェーダーのコンパイル結果
     ComPtr<ID3DBlob> pixelShader;  // ピクセルシェーダーのコンパイル結果
     ComPtr<ID3DBlob> compileErrors; // シェーダーコンパイルエラー
@@ -407,9 +429,14 @@ float4 main(PSInput input) : SV_TARGET // レンダーターゲットへの出�
     // 入力レイアウト記述 (頂点データフォーマット)
     D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
     {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // 位置 (float3)
-        { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // 色 (float4)
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 24,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
+
 
     // PSO（パイプラインステートオブジェクト）の設定
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
@@ -600,13 +627,21 @@ void D3D12Renderer::Render()
                     DirectX::XMMATRIX mvp = world * viewMatrix * projMatrix;           // MVP行列を計算
 
                     SceneConstantBuffer constantBufferData;
+
                     // MVP行列を転置して定数バッファデータに格納
                     DirectX::XMStoreFloat4x4(&constantBufferData.mvp, DirectX::XMMatrixTranspose(mvp));
 
+                    // 光源方向をセット（正規化した値）
+                    constantBufferData.lightDir = DirectX::XMFLOAT3(0.0f, -1.0f, -1.0f);
+                    constantBufferData.pad = 0.0f; // 16バイト境界合わせ
+
                     // 定数バッファのCPUポインタが有効な場合、正しいメモリ位置にデータをコピー
                     if (m_pCbvDataBegin) {
-                        memcpy(m_pCbvDataBegin + objectIndex * alignedConstantBufferSize, &constantBufferData, sizeof(constantBufferData));
+                        memcpy(m_pCbvDataBegin + objectIndex * alignedConstantBufferSize,
+                            &constantBufferData,
+                            sizeof(constantBufferData));
                     }
+
 
                     // 2. オブジェクトごとのCBVディスクリプタを作成
                     D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};

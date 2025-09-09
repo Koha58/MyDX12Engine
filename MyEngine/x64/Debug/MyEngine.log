@@ -1,15 +1,14 @@
-﻿  CameraComponent.cpp
-  CameraControllerComponent.cpp
-  Component.cpp
-  D3D12Renderer.cpp
-  GameObject.cpp
-  Input.cpp
+﻿  D3D12Renderer.cpp
+D:\Users\2312004\Documents\MyEngine\MyEngine\SceneConstantBuffer.h(5,8): error C2011: 'SceneConstantBuffer': 'struct' 型の再定義
+  (ソース ファイル 'D3D12Renderer.cpp' をコンパイルしています)
+      D:\Users\2312004\Documents\MyEngine\MyEngine\D3D12Renderer.h(25,8):
+      'SceneConstantBuffer' の宣言を確認してください
+  
+D:\Users\2312004\Documents\MyEngine\MyEngine\D3D12Renderer.cpp(43,25): error C2027: 認識できない型 'SceneConstantBuffer' が使われています。
+      D:\Users\2312004\Documents\MyEngine\MyEngine\D3D12Renderer.h(25,8):
+      'SceneConstantBuffer' の宣言を確認してください
+  
+D:\Users\2312004\Documents\MyEngine\MyEngine\D3D12Renderer.cpp(629,41): error C2079: 'constantBufferData' が 未定義の struct 'SceneConstantBuffer' で使用しています。
   main.cpp
-  Mesh.cpp
   MeshRendererComponent.cpp
-  Scene.cpp
-  SceneManager.cpp
-  Time.cpp
-  TransformComponent.cpp
   コードを生成中...
-  MyEngine.vcxproj -> D:\Users\2312004\Documents\MyEngine\x64\Debug\MyEngine.exe

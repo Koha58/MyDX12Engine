@@ -11,8 +11,9 @@
 // =====================================================
 struct Vertex
 {
-    DirectX::XMFLOAT3 Position; // 頂点の位置 (x, y, z)
-    DirectX::XMFLOAT4 Color;    // 頂点カラー (r, g, b, a)
+    DirectX::XMFLOAT3 Position;
+    DirectX::XMFLOAT3 Normal;
+    DirectX::XMFLOAT4 Color;
 };
 
 // =====================================================

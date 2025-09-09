@@ -34,7 +34,7 @@ void CameraControllerComponent::Update(float deltaTime)
 
     m_Transform->Rotation = { m_Pitch, m_Yaw, 0.0f };
 
-    // --- WASDˆÚ“® ---
+    // --- WASD + Space + Ctrl ˆÚ“® ---
     XMVECTOR pos = XMLoadFloat3(&m_Transform->Position);
     XMVECTOR forward = m_Transform->GetForwardVector();
     XMVECTOR right = m_Transform->GetRightVector();
@@ -45,5 +45,12 @@ void CameraControllerComponent::Update(float deltaTime)
     if (Input::GetKey(KeyCode::A)) pos -= right * m_MoveSpeed * deltaTime;
     if (Input::GetKey(KeyCode::D)) pos += right * m_MoveSpeed * deltaTime;
 
+    // ã¸ / ‰º~
+    if (Input::GetKey(KeyCode::Space))       pos += up * m_MoveSpeed * deltaTime;
+    if (Input::GetKey(KeyCode::LeftControl)) pos -= up * m_MoveSpeed * deltaTime;
+    if (Input::GetKey(KeyCode::RightControl))pos -= up * m_MoveSpeed * deltaTime;
+
     XMStoreFloat3(&m_Transform->Position, pos);
 }
+
+
