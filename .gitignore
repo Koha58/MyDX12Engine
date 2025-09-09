@@ -12,3 +12,4 @@
 *.hlsl.h
 .vs/MyEngine/v17/*
 .vs/
+x64/Release/MyEngine.exe
