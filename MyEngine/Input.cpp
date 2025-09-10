@@ -1,15 +1,27 @@
 #include <windowsx.h> // GET_X_LPARAM, GET_Y_LPARAM を使うため
 #include "Input.h"
 
-bool Input::m_CurrentKeys[256] = { false };
-bool Input::m_PreviousKeys[256] = { false };
+// =============================================================
+// 静的メンバ変数の定義
+//  - 「現在の状態」と「前フレームの状態」を保持して差分検出
+// =============================================================
 
-bool Input::m_CurrentMouse[3] = { false };
-bool Input::m_PreviousMouse[3] = { false };
+// キーボード入力状態
+bool Input::m_CurrentKeys[256] = { false };   // 今フレームのキー状態
+bool Input::m_PreviousKeys[256] = { false };  // 前フレームのキー状態
 
+// マウス入力状態（左:0, 右:1, 中:2 の3ボタン想定）
+bool Input::m_CurrentMouse[3] = { false };    // 今フレームのマウスボタン
+bool Input::m_PreviousMouse[3] = { false };   // 前フレームのマウスボタン
+
+// マウス座標（ウィンドウ座標系）
 int Input::m_MouseX = 0;
 int Input::m_MouseY = 0;
 
+// -------------------------------------------------------------
+// 初期化
+//  - 全キー・マウスボタン状態をクリア
+// -------------------------------------------------------------
 void Input::Initialize()
 {
     ZeroMemory(m_CurrentKeys, sizeof(m_CurrentKeys));
@@ -18,6 +30,11 @@ void Input::Initialize()
     ZeroMemory(m_PreviousMouse, sizeof(m_PreviousMouse));
 }
 
+// -------------------------------------------------------------
+// マウス移動量の取得
+//  - 内部で「前回位置」を static に保持して差分を計算
+//  - 戻り値: (dx, dy)
+// -------------------------------------------------------------
 MouseDelta Input::GetMouseDelta()
 {
     static int lastX = m_MouseX;
@@ -32,27 +49,42 @@ MouseDelta Input::GetMouseDelta()
     return { dx, dy };
 }
 
+// -------------------------------------------------------------
+// 毎フレームの更新
+//  - 「現在の状態」を「前フレーム状態」にコピー
+//  - ProcessMessage() が書き換えた結果を保存する役割
+// -------------------------------------------------------------
 void Input::Update()
 {
     memcpy(m_PreviousKeys, m_CurrentKeys, sizeof(m_CurrentKeys));
     memcpy(m_PreviousMouse, m_CurrentMouse, sizeof(m_CurrentMouse));
 }
 
+// -------------------------------------------------------------
+// キー入力判定
+// -------------------------------------------------------------
 
+// 押されている間 true
 bool Input::GetKey(KeyCode key)
 {
     return m_CurrentKeys[(int)key];
 }
 
+// 押された瞬間 true （今フレーム押されていて、前フレームは押されていない）
 bool Input::GetKeyDown(KeyCode key)
 {
     return m_CurrentKeys[(int)key] && !m_PreviousKeys[(int)key];
 }
 
+// 離された瞬間 true （今フレーム押されていなくて、前フレームは押されていた）
 bool Input::GetKeyUp(KeyCode key)
 {
     return !m_CurrentKeys[(int)key] && m_PreviousKeys[(int)key];
 }
+
+// -------------------------------------------------------------
+// マウスボタン入力判定
+// -------------------------------------------------------------
 
 bool Input::GetMouseButton(MouseButton button)
 {
@@ -69,6 +101,9 @@ bool Input::GetMouseButtonUp(MouseButton button)
     return !m_CurrentMouse[(int)button] && m_PreviousMouse[(int)button];
 }
 
+// -------------------------------------------------------------
+// マウス座標の取得
+// -------------------------------------------------------------
 int Input::GetMouseX()
 {
     return m_MouseX;
@@ -79,24 +114,31 @@ int Input::GetMouseY()
     return m_MouseY;
 }
 
+// -------------------------------------------------------------
+// Win32 メッセージ処理
+//  - Win32 ウィンドウプロシージャから呼び出される想定
+//  - 各種入力イベントを内部状態に反映
+// -------------------------------------------------------------
 void Input::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
+        // --- キーボード入力 ---
     case WM_KEYDOWN:
-    case WM_SYSKEYDOWN:
+    case WM_SYSKEYDOWN: // Alt 系などシステムキー
     {
-        int vk = (int)wParam;
+        int vk = (int)wParam; // 仮想キーコード
 
-        // Ctrl 判定
+        // 左右 Ctrl の判定（通常 VK_CONTROL で区別がつかないため拡張ビットを見る）
         if (vk == VK_CONTROL)
         {
-            bool isExtended = (lParam & (1 << 24)) != 0; // 24bitで右かどうか判定
+            bool isExtended = (lParam & (1 << 24)) != 0; // 24bit が立っていれば右
             vk = isExtended ? VK_RCONTROL : VK_LCONTROL;
         }
 
-        m_CurrentKeys[vk] = true;
+        m_CurrentKeys[vk] = true; // 押下状態にする
 
+        // デバッグログ出力
         char buf[64];
         sprintf_s(buf, "KeyDown: %d\n", vk);
         OutputDebugStringA(buf);
@@ -113,7 +155,7 @@ void Input::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
             vk = isExtended ? VK_RCONTROL : VK_LCONTROL;
         }
 
-        m_CurrentKeys[vk] = false;
+        m_CurrentKeys[vk] = false; // 離された状態にする
 
         char buf[64];
         sprintf_s(buf, "KeyUp: %d\n", vk);
@@ -121,6 +163,7 @@ void Input::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
         break;
     }
 
+    // --- マウスボタン ---
     case WM_LBUTTONDOWN: m_CurrentMouse[0] = true; break;
     case WM_LBUTTONUP:   m_CurrentMouse[0] = false; break;
     case WM_RBUTTONDOWN: m_CurrentMouse[1] = true; break;
@@ -128,11 +171,10 @@ void Input::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
     case WM_MBUTTONDOWN: m_CurrentMouse[2] = true; break;
     case WM_MBUTTONUP:   m_CurrentMouse[2] = false; break;
 
+        // --- マウス移動 ---
     case WM_MOUSEMOVE:
-        m_MouseX = GET_X_LPARAM(lParam);
-        m_MouseY = GET_Y_LPARAM(lParam);
+        m_MouseX = GET_X_LPARAM(lParam); // ウィンドウ内のX座標
+        m_MouseY = GET_Y_LPARAM(lParam); // ウィンドウ内のY座標
         break;
     }
 }
-
-
