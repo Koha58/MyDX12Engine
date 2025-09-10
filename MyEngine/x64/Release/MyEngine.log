@@ -1,6 +1,27 @@
-﻿  TransformComponent.cpp
-  コード生成しています。
-  Previous IPDB and IOBJ mismatch, fall back to full compilation.
-  All 1170 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
-  コード生成が終了しました。
-  MyEngine.vcxproj -> C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\x64\Release\MyEngine.exe
+﻿  CameraComponent.cpp
+  CameraControllerComponent.cpp
+  Component.cpp
+C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\CameraControllerComponent.cpp(33,20): error C2039: 'clamp': 'std' のメンバーではありません
+      C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\algorithm(225,1):
+      'std' の宣言を確認してください
+  
+C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\CameraControllerComponent.cpp(33,20): error C3861: 'clamp': 識別子が見つかりませんでした
+  D3D12Renderer.cpp
+C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\SceneConstantBuffer.h(5,8): error C2011: 'SceneConstantBuffer': 'struct' 型の再定義
+  (ソース ファイル 'D3D12Renderer.cpp' をコンパイルしています)
+      C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\D3D12Renderer.h(25,8):
+      'SceneConstantBuffer' の宣言を確認してください
+  
+C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\D3D12Renderer.cpp(43,25): error C2027: 認識できない型 'SceneConstantBuffer' が使われています。
+      C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\D3D12Renderer.h(25,8):
+      'SceneConstantBuffer' の宣言を確認してください
+  
+C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\D3D12Renderer.cpp(629,41): error C2079: 'constantBufferData' が 未定義の struct 'SceneConstantBuffer' で使用しています。
+  GameObject.cpp
+  Input.cpp
+  main.cpp
+  Mesh.cpp
+  MeshRendererComponent.cpp
+  Scene.cpp
+  Time.cpp
+  TransformComponent.cpp
