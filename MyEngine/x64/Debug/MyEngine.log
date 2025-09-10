@@ -1,15 +1,1 @@
-﻿  CameraComponent.cpp
-  CameraControllerComponent.cpp
-  Component.cpp
-  D3D12Renderer.cpp
-  GameObject.cpp
-  Input.cpp
-  main.cpp
-  Mesh.cpp
-  MeshRendererComponent.cpp
-  Scene.cpp
-  SceneManager.cpp
-  Time.cpp
-  TransformComponent.cpp
-  コードを生成中...
-  MyEngine.vcxproj -> C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\x64\Debug\MyEngine.exe
+﻿  MyEngine.vcxproj -> C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\x64\Debug\MyEngine.exe

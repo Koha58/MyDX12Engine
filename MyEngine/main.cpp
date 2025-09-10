@@ -117,7 +117,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         if (app->renderer) {
 
-            //app->renderer->Resize(newW, newH);
+            app->renderer->Resize(newW, newH);
         }
 
         if (app->camera) {

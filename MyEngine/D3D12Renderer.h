@@ -52,9 +52,9 @@ public:
     //  - シーンやカメラが未設定なら早期 return。
     void Render();
 
-    //void WaitForGPU() noexcept;
+    void WaitForGPU() noexcept;
 
-    //void Resize(UINT width, UINT height);
+    void Resize(UINT width, UINT height) noexcept;
 
     // メッシュ単体ドローのヘルパー：
     //  - 事前に IA（VB/IB/トポロジ）をセットし、DrawIndexedInstanced を発行。

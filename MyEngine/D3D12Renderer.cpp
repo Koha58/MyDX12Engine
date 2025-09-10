@@ -812,3 +812,66 @@ void D3D12Renderer::DrawMesh(MeshRendererComponent* meshRenderer)
 
     commandList->DrawIndexedInstanced(meshRenderer->IndexCount, 1, 0, 0, 0);
 }
+
+void D3D12Renderer::WaitForGPU() noexcept
+{
+    if (!commandQueue || !fence) return;
+    const UINT64 value = ++fenceValue;
+    if (FAILED(commandQueue->Signal(fence.Get(), value))) return;
+
+    if (fence->GetCompletedValue() < value) {
+        if (SUCCEEDED(fence->SetEventOnCompletion(value, fenceEvent))) {
+            WaitForSingleObject(fenceEvent, INFINITE);
+        }
+    }
+}
+
+void D3D12Renderer::Resize(UINT width, UINT height) noexcept
+{
+    if (width == 0 || height == 0) return;
+
+    // 表示側で毎フレーム m_Width/Height を使っているので更新
+    m_Width = width;
+    m_Height = height;
+
+    // 古いバックバッファ/DSVをGPUが使い終えるまで待つ
+    WaitForGPU(); // ないなら WaitForPreviousFrame() でも可
+
+    // 古いリソースを解放
+    for (UINT i = 0; i < FrameCount; ++i) {
+        renderTargets[i].Reset();
+    }
+    depthStencilBuffer.Reset();
+
+    // スワップチェインのサイズだけ変更（フォーマット/フラグは据え置き）
+    DXGI_SWAP_CHAIN_DESC1 desc1{};
+    swapChain->GetDesc1(&desc1);
+    HRESULT hr = swapChain->ResizeBuffers(
+        FrameCount,
+        width, height,
+        desc1.Format,   // R8G8B8A8_UNORM（初期化時の設定を維持）
+        desc1.Flags
+    );
+    if (FAILED(hr)) { LogHRESULTError(hr, "ResizeBuffers failed"); return; }
+
+    frameIndex = swapChain->GetCurrentBackBufferIndex();
+
+    // RTV 再作成（ヒープは再利用）
+    {
+        CD3DX12_CPU_DESCRIPTOR_HANDLE rtv(rtvHeap->GetCPUDescriptorHandleForHeapStart());
+        for (UINT i = 0; i < FrameCount; ++i) {
+            hr = swapChain->GetBuffer(i, IID_PPV_ARGS(&renderTargets[i]));
+            if (FAILED(hr)) { LogHRESULTError(hr, "GetBuffer failed in Resize"); return; }
+            device->CreateRenderTargetView(renderTargets[i].Get(), nullptr, rtv);
+            rtv.Offset(1, rtvDescriptorSize);
+        }
+    }
+
+    // DSV 再作成（あなたのヘルパをそのまま使う）
+    if (!CreateDepthStencilBuffer(width, height)) {
+        OutputDebugStringA("[Resize] CreateDepthStencilBuffer failed\n");
+        return;
+    }
+
+    // ビューポート/シザーは Render() 内で m_Width/Height から毎フレームセットしているのでここでは不要
+}
