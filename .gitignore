@@ -1,18 +1,31 @@
-# Visual Studio build folders
+# ビルド結果
 [Bb]in/
 [Oo]bj/
+[Oo]ut/
+[Ll]og/
+*.log
+
+# Visual Studio の作業フォルダ
+.vs/
 .vscode/
+
+# ユーザー固有の設定ファイル
 *.user
 *.suo
-*.pdb
+*.userosscache
+*.sln.docstates
 *.vcxproj.user
 
-# Shader binaries
+# デバッグ / シンボル関連
+*.pdb
+*.ilk
+*.idb
+
+# 実行ファイル
+*.exe
+*.dll
+*.lib
+
+# シェーダ関連
 *.cso
 *.hlsl.h
-.vs/MyEngine/v17/*
-.vs/
-
-# Executable files
-*.exe
-
