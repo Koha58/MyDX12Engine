@@ -4,7 +4,7 @@
 //   - 最小限の D3D12 レンダリング環境で、シーン/ゲームオブジェクト/コンポーネントを
 //     どの順で初期化・更新・描画するかを一望できるようにする。
 // 特徴:
-//   - 「B案」ポリシー: AddComponent() 側で Awake/OnEnable を呼ぶ（Scene 側では Awake を呼ばない）
+//   - ポリシー: AddComponent() 側で Awake/OnEnable を呼ぶ（Scene 側では Awake を呼ばない）
 //   - GameObject は GameObject::Create() ファクトリで生成（shared_from_this 安全化）
 //   - ウィンドウの「外枠サイズ」と「クライアントサイズ」を明確に分離
 //   - 実クライアントサイズからスワップチェイン/カメラアスペクトを構築（ズレ防止）
@@ -33,6 +33,18 @@
 #include "Input.h"
 #include "CameraComponent.h"
 #include "CameraControllerComponent.h"
+
+struct AppContext {
+    D3D12Renderer* renderer = nullptr;
+    std::shared_ptr<CameraComponent> camera;
+    UINT clientW = 0;
+    UINT clientH = 0;
+};
+
+static AppContext* GetApp(HWND hWnd)
+{
+    return reinterpret_cast<AppContext*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+}
 
 // ============================================================================
 // デバッグ用コンポーネント
@@ -90,7 +102,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     Input::ProcessMessage(message, wParam, lParam); // 入力の反映
 
+    AppContext* app = GetApp(hWnd); // カメラ/レンダラへアクセスするため
+
     switch (message) {
+    case WM_SIZE: {
+        if (!app || wParam == SIZE_MINIMIZED) return 0;
+
+        auto newW = LOWORD(lParam);
+        auto newH = HIWORD(lParam);
+        if (newW == 0 || newH == 0) return 0;
+
+        app->clientW = newW;
+        app->clientH = newH;
+
+        if (app->renderer) {
+
+            //app->renderer->Resize(newW, newH);
+        }
+
+        if (app->camera) {
+            
+            app->camera->SetAspect(static_cast<float>(newW) /
+                static_cast<float>(newH));
+        }
+
+        return 0;
+    }
     case WM_DESTROY:
         PostQuitMessage(0); // メインループ脱出指示
         return 0;
@@ -186,6 +223,16 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     D3D12Renderer renderer;
     renderer.Initialize(hWnd, clientW, clientH);
 
+    static AppContext ctx;
+    SetWindowLongPtr(hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&ctx));
+
+    // レンダラ初期化後に埋める
+    ctx.renderer = &renderer;
+
+    // 初期アスペクト(起動直後のクライアントサイズ)を保存しておく
+    ctx.clientW = clientW;
+    ctx.clientH = clientH;
+
     // ---------------- 5) シーン構築 ----------------
     // SceneManager は複数シーンの切替/保持を担う。ここでは "Main" を作って有効化。
     SceneManager sceneManager;
@@ -220,10 +267,13 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     // --- カメラ（WASD + マウスで移動/回転できる） ---
     auto camObj = GameObject::Create("Camera");
     camObj->Transform->Position = { 0.0f, 2.0f, -5.0f }; // 俯瞰ぎみ
-    auto cam = camObj->AddComponent<CameraComponent>(camObj.get());
-    cam->SetAspect(static_cast<float>(clientW) / static_cast<float>(clientH)); // 実クライアント比
-    camObj->AddComponent<CameraControllerComponent>(camObj.get(), cam.get());
+    auto cameraComp = camObj->AddComponent<CameraComponent>(camObj.get());
+    cameraComp->SetAspect(static_cast<float>(clientW) / static_cast<float>(clientH)); // 実クライアント比
+    camObj->AddComponent<CameraControllerComponent>(camObj.get(), cameraComp.get());
     mainScene->AddGameObject(camObj);
+
+    // カメラを使った“後”で埋める
+    ctx.camera = cameraComp;
 
     // ---------------- 6) メインループ ----------------
     // ループ構造:
@@ -262,7 +312,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
         if (auto scene = sceneManager.GetActiveScene()) {
             scene->Update(dt);                 // ゲームロジック（親→子→各コンポーネント）
             renderer.SetScene(scene);          // 今回描画するシーン
-            renderer.SetCamera(cam);           // 使用カメラ
+            renderer.SetCamera(cameraComp);           // 使用カメラ
             renderer.Render();                 // D3D12 コマンド記録→実行→Present
         }
 

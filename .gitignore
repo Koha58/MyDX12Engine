@@ -12,3 +12,7 @@
 *.hlsl.h
 .vs/MyEngine/v17/*
 .vs/
+
+# Executable files
+*.exe
+

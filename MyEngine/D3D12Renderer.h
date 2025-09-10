@@ -52,6 +52,10 @@ public:
     //  - シーンやカメラが未設定なら早期 return。
     void Render();
 
+    //void WaitForGPU() noexcept;
+
+    //void Resize(UINT width, UINT height);
+
     // メッシュ単体ドローのヘルパー：
     //  - 事前に IA（VB/IB/トポロジ）をセットし、DrawIndexedInstanced を発行。
     //  - PSO/RS/DS/CBV などは Render() 側の流れで設定されている前提。

@@ -588,14 +588,9 @@ void D3D12Renderer::Render()
     using namespace DirectX;
     if (!m_Camera) return;
 
-    DirectX::XMMATRIX viewMatrix = m_Camera->GetViewMatrix();
-    DirectX::XMMATRIX projMatrix = m_Camera->GetProjectionMatrix();
+    const DirectX::XMMATRIX viewMatrix = m_Camera->GetViewMatrix();
+    const DirectX::XMMATRIX projMatrix = m_Camera->GetProjectionMatrix();
 
-    // 【注意】ここで固定の Projection を上書きしているため CameraComponent の設定が無視される。
-    // 将来的にはウィンドウリサイズ/カメラ変更時だけ再計算し、ここでは上書きしない設計を推奨。
-    projMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.0f),
-        (FLOAT)m_Width / (FLOAT)m_Height,
-        0.1f, 100.0f);
 
     // (3) Present → RenderTarget へリソース遷移（必須）
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(
