@@ -34,13 +34,6 @@
 #include "CameraComponent.h"
 #include "CameraControllerComponent.h"
 
-#ifdef  _DEBUG
-#include<wrl/client.h>
-#include <dxgidebug.h>
-#pragma comment(lib, "dxguid.lib")
-using Microsoft::WRL::ComPtr;
-#endif //  _DEBUG
-
 
 struct AppContext {
     D3D12Renderer* renderer = nullptr;
@@ -336,17 +329,6 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
         scene->DestroyAllGameObjects(); // OnDestroy を正しく呼びながら破棄
     }
     renderer.Cleanup();
-
-#ifdef _DEBUG
-    // 生存オブジェクトのサマリを表示
-    Microsoft::WRL::ComPtr<IDXGIDebug1> dxgiDebug;
-    if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&dxgiDebug))))
-    {
-        const DXGI_DEBUG_RLO_FLAGS flags =
-            static_cast<DXGI_DEBUG_RLO_FLAGS>(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_SUMMARY | DXGI_DEBUG_RLO_IGNORE_INTERNAL);
-        dxgiDebug->ReportLiveObjects(DXGI_DEBUG_ALL, flags);
-    }
-#endif
 
     return static_cast<int>(msg.wParam);
 }

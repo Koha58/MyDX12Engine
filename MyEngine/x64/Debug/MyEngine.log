@@ -1,2 +1,5 @@
 ﻿  D3D12Renderer.cpp
-  MyEngine.vcxproj -> D:\Users\2312004\Documents\MyEngine\x64\Debug\MyEngine.exe
+  MeshRendererComponent.cpp
+  main.cpp
+  コードを生成中...
+  MyEngine.vcxproj -> C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\x64\Debug\MyEngine.exe

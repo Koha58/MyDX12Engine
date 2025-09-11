@@ -1,58 +1,65 @@
 ﻿//======================================================================================
 // D3D12Renderer.cpp  ―  DX12 最小レンダラー（可読性・再学習しやすさ重視）
 //
-// 物理配置（読みやすさ目的の順番）
-//   0) ヘッダ／ユーティリティ
-//   1) 外から呼ぶ順：Initialize → Render → Resize → Cleanup
-//   2) 作成系：CreateDevice / CreateCommandQueue / CreateSwapChain / CreateRenderTargetViews
-//              CreateDepthStencilBuffer / CreateCommandAllocatorsAndList / CreatePipelineState
-//              CreateMeshRendererResources
-//   3) 同期・ユーティリティ：WaitForPreviousFrame / WaitForGPU / DrawMesh
+// 本ファイルは「いつ読み返しても迷わない」ことを目的に、処理順に沿って定義し、
+// 各ステップの意図・前提・失敗時の挙動・性能上の注意を細かくコメントしています。
 //
-// 設計メモ：
-//  - CB(定数バッファ)は 256B アライン必須。起動時に MaxObjects 分の CBV を一括生成し、
-//    描画時は GPU ディスクリプタを「オフセット指定で差し替え」るだけにして軽量化。
-//  - Render() の CBV バインドは 1 回のみ（過去の重複呼び出しを削除）。
-//  - 同期は「毎フレーム完全同期」（安全だが性能は控えめ）。スループットを上げるなら
-//    フレーム・リソースの二重化/三重化と書き込み先のラウンドロビン化が次の一手。
+// 配置（読む順／処理順）
+//   0) ヘッダ＆ユーティリティ（Includes & Helpers）
+//   1) 公開API：Initialize → Render → Resize → Cleanup（Public API）
+//   2) 作成系：CreateDevice / CreateCommandQueue / CreateSwapChain / CreateRenderTargetViews
+//               CreateDepthStencilBuffer / CreateCommandAllocatorsAndList / CreatePipelineState
+//               CreateMeshRendererResources（Creation）
+//   3) 同期・ユーティリティ：WaitForPreviousFrame / WaitForGPU / DrawMesh / ReleaseSceneResources
+//
+// 設計メモ（再学習の取っ掛かり）：
+//  - 定数バッファ(CB)は 256B アライン必須。起動時に MaxObjects 分の CBV を一括生成し、
+//    描画時は GPU ディスクリプタを「オフセット指定で差し替え」るだけで高速に回す。
+//  - Render() の CBV バインドは 1 回のみ（無駄な再設定を避ける）。
+//  - 同期は「毎フレーム完全同期」（安全だがスループットは控えめ）。より高性能化するなら
+//    フレームリソースを二重化/三重化して、書き込み先のラウンドロビン化を行う。
+//  - HLSL は row_major を明示。C++ 側は「転置せず」float4x4 を詰める約束とする。
+//  - SwapChain は Flip Discard / vsync=ON（Present(1,0)）。ティアリング対応は未実装。
+//  - 例外方針：致命的同期エラー（Fence到達待ち失敗）などは例外を投げる。他は false 返却。
+//
+// 依存：D3D12Renderer.h / SceneConstantBuffer.h / MeshRendererComponent, GameObject など。
+//       それらの宣言・ライフサイクルは本ファイル外で管理する前提。
 //======================================================================================
 
-#include "D3D12Renderer.h"            // このレンダラーの宣言（FrameCount などはヘッダ側を参照）
-#include "SceneConstantBuffer.h"      // C++/HLSL 間でメモリレイアウトを一致させる定数バッファ構造体
-#include "d3dx12.h"                   // CD3DX12_* ヘルパ（DX12公式サンプルの便利ラッパ群）
+#pragma region Includes & Helpers
+#include "D3D12Renderer.h"
+#include "SceneConstantBuffer.h"
+#include "d3dx12.h"                 // CD3DX12_* ヘルパ（DX12公式サンプル系）
 
-#include <stdexcept>                  // 致命的エラー時に例外を投げる
-#include <d3dcompiler.h>              // ランタイム HLSL コンパイル（D3DCompile）
-#include <d3d12sdklayers.h>           
-#include <sstream>                    // デバッグ出力の整形
-#include <comdef.h>                   // _com_error（HRESULT→人間可読メッセージ）
-#include <functional>                 // 再帰ラムダ用
-#include <cmath>                      // isfinite / fabsf
-#include <cstring>                    // std::strlen / std::memcpy
-#include <dxgi1_6.h>                  // もしくは <dxgi1_4.h>
+#include <Windows.h>                 // HWND / WaitForSingleObject / OutputDebugString
+#include <wrl/client.h>              // ComPtr（RAIIでAddRef/Releaseを自動化）
+#include <stdexcept>                 // std::runtime_error（致命エラー用）
+#include <d3dcompiler.h>             // D3DCompile（ランタイムコンパイル。製品ではDXC推奨）
+#include <d3d12sdklayers.h>          // DebugLayer / InfoQueue / DebugDevice（診断用）
+#include <sstream>                   // ログ文整形
+#include <comdef.h>                  // _com_error（HRESULT→文字列）
+#include <functional>                // 再帰ラムダ
+#include <cmath>                     // std::isfinite / std::fabs
+#include <cstring>                   // std::strlen / std::memcpy
+#include <dxgi1_6.h>                 // DXGI（SwapChain/Adapter列挙）
 
-#pragma comment(lib, "d3dcompiler.lib")   // D3DCompile 用
-#pragma comment(lib, "d3d12.lib")         // D3D12 本体
-#pragma comment(lib, "dxgi.lib")          // DXGI（アダプタ/スワップチェイン）
+#pragma comment(lib, "d3dcompiler.lib")
+#pragma comment(lib, "d3d12.lib")
+#pragma comment(lib, "dxgi.lib")
 
-using Microsoft::WRL::ComPtr;        // COM ポインタ管理（AddRef/Release 自動化）
+using Microsoft::WRL::ComPtr;
 
-namespace // この翻訳単位のみで使うユーティリティ
+// --- 失敗時ログ補助（成功時は何もしない）-----------------------------------------
+// ・DirectXの関数は HRESULT で返ってくる。失敗時に OS 側の説明文字列を付けて出力する。
+// ・例外は投げない（投げる箇所は別途明示）。復帰可能性がある部分は戻り値で伝える。
+namespace
 {
-    //----------------------------------------------------------------------------------
-    // LogHRESULTError
-    // 目的  : HRESULT 失敗時に VS の出力へ詳細ログを出す（成功時は何もしない）
-    // 引数  : hr  … エラーコード
-    //         msg … 併せて出したいコンテキスト文字列（英語/日本語可）
-    // 備考  : _com_error 経由で OS のエラーメッセージを取得して可読性を上げる
-    //----------------------------------------------------------------------------------
     void LogHRESULTError(HRESULT hr, const char* msg)
     {
         if (FAILED(hr))
         {
             _com_error err(hr);
             std::wstring errMsg = err.ErrorMessage();
-
             std::wstringstream wss;
             wss << L"[D3D12Renderer ERROR] " << msg
                 << L" HRESULT=0x" << std::hex << hr
@@ -61,123 +68,90 @@ namespace // この翻訳単位のみで使うユーティリティ
         }
     }
 }
+#pragma endregion // Includes & Helpers
 
-//--------------------------------------------------------------------------------------
-// 一度に描ける最大オブジェクト数。
-// ・CBV（定数バッファビュー）スロット数と Upload バッファサイズに一致させること。
-// ・将来オブジェクト数を拡張する場合は、ディスクリプタヒープ/CB を可変長に。
-//--------------------------------------------------------------------------------------
+// 一度に描ける最大数（CBVスロットと一致させる。将来は可変長へ拡張可）
 constexpr UINT MaxObjects = 100;
 
 //======================================================================================
 // コンストラクタ / デストラクタ
+//   ・ここでは重い初期化はしない（Create* は Initialize() に集約）。
+//   ・デストラクタでは Cleanup() を呼ぶことで、GPU完了待ち→解放の順序を保証。
 //======================================================================================
 D3D12Renderer::D3D12Renderer()
     : m_Width(0), m_Height(0),
-    frameIndex(0),            // 現フレームのバックバッファインデックス（Present 後に更新）
-    fenceValue(0),            // 次に Signal するフェンス値
-    fenceEvent(nullptr),      // GPU 完了通知用の OS イベント（自動リセット）
-    m_pCbvDataBegin(nullptr), // 永続マップした CB の CPU 側ポインタ（Upload ヒープ）
+    frameIndex(0),
+    fenceValue(0),
+    fenceEvent(nullptr),
+    m_pCbvDataBegin(nullptr),
     m_frameCount(0),
     rtvDescriptorSize(0),
-    m_ViewMatrix(DirectX::XMMatrixIdentity()),      // 既定は単位行列（安全）
-    m_ProjectionMatrix(DirectX::XMMatrixIdentity()) // 同上
+    m_ViewMatrix(DirectX::XMMatrixIdentity()),
+    m_ProjectionMatrix(DirectX::XMMatrixIdentity())
 {
-    // ここでは重い初期化は行わず、ゼロ初期化のみ。リソース確保は Initialize() で。
 }
 
 D3D12Renderer::~D3D12Renderer()
 {
-    // デストラクタでは確実に GPU 側の処理完了を待ってから破棄する。
+    // Render中に解放してクラッシュしないよう、必ずGPU完了待ちを含む Cleanup を通す
     Cleanup();
 }
 
-//======================================================================================
-// 1) 外から呼ぶ順（API エントリ）
-//    Initialize → Render → Resize → Cleanup
-//======================================================================================
+#pragma region Public API (Initialize / Render / Resize / Cleanup)
 
 /**
  * Initialize
- * 概要   : DX12 の主要オブジェクト（デバイス→キュー→スワップチェイン→RTV→DSV→
- *          コマンド関連→PSO）を依存順に作成し、シーン共通の CBV テーブルを事前生成。
- * 引数   : hwnd   … 出力先ウィンドウハンドル
- *          width  … 初期バックバッファ幅
- *          height … 初期バックバッファ高さ
- * 戻り値 : 成功で true / 失敗で false（詳細は VS 出力ウィンドウのログを参照）
- * 前提   : 本クラスは新規状態（再初期化は未考慮）
- * 事後   : フェンス/イベント/ディスクリプタヒープ/CB Upload など一式が有効化される
- * 失敗時 : 途中で false を返す（呼び出し側で中断し、必要なら Cleanup を呼ぶ）
- * 同期   : 初期化中に他スレッドから Render/Resize/Cleanup を呼ばないこと
- * 性能   : CBV は MaxObjects 分を起動時に一括生成 → 毎フレームのディスクリプタ作成コストゼロ
+ * 主要オブジェクトを依存順に生成し、共通CB/CBVを事前生成する。
+ * 戻り値: 成功 true / 失敗 false（詳細はデバッグ出力を参照）
+ * 注意点:
+ *  - 再初期化は未考慮（既存リソースがある状態では呼ばない）
+ *  - 他スレッドから同時に Render/Resize/Cleanup を呼ばないこと
  */
 bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
 {
-    m_Width = width;   // スワップチェインやビューポートに使用
+    m_Width = width;   // ビューポートやスワップチェインに使用
     m_Height = height;
 
-    //--- DX12 基本オブジェクトの生成（依存順） --------------------------------
-    if (!CreateDevice())                         return false; // デバイスは最上位
-    if (!CreateCommandQueue())                   return false; // GPU へコマンドを送る通路
-    if (!CreateSwapChain(hwnd, width, height))   return false; // 表示用のバックバッファ群
-    if (!CreateRenderTargetViews())              return false; // RTV を FrameCount 分作成
-    if (!CreateDepthStencilBuffer(width, height))return false; // 深度テクスチャ + DSV
-    if (!CreateCommandAllocatorsAndList())       return false; // 録画器（アロケータ/リスト）
-    if (!CreatePipelineState())                  return false; // ルートシグネチャ + PSO
+    // --- 依存順に作成（失敗で即座に false）。例外は使わず呼び出し側で分岐しやすくする。
+    if (!CreateDevice())                          return false; // 1) 物理/論理デバイス
+    if (!CreateCommandQueue())                    return false; // 2) GPUへコマンド送出
+    if (!CreateSwapChain(hwnd, width, height))    return false; // 3) 表示バックバッファ
+    if (!CreateRenderTargetViews())               return false; // 4) 各バックバッファのRTV
+    if (!CreateDepthStencilBuffer(width, height)) return false; // 5) 深度テクスチャ + DSV
+    if (!CreateCommandAllocatorsAndList())        return false; // 6) フレーム別アロケータ + CL
+    if (!CreatePipelineState())                   return false; // 7) ルートシグネチャ + PSO
 
-    //--- シーン共通の CB バッファ/CBV 事前生成 ---------------------------------
-    // D3D12 の CB は 256B アライン必須（SizeInBytes も 256 の倍数）。
-    const UINT alignedConstantBufferSize =
+    // ---- 8) 定数バッファ（Upload）と CBV を MaxObjects 分まとめて用意 -----------------
+    //  ・CB は 256B 境界でサイズ丸めが必要（SizeInBytes も 256 の倍数）。
+    //  ・Uploadヒープを永続マップ（persistent map）し、毎フレーム memcpy で更新。
+    const UINT alignedSize =
         (sizeof(SceneConstantBuffer) + D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT - 1)
         & ~(D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT - 1);
 
-    // シェーダ可視な CBV/SRV/UAV ヒープ（描画時 SetDescriptorHeaps で束ねて渡す）
     D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {};
-    cbvHeapDesc.NumDescriptors = MaxObjects; // 1 オブジェクト = 1 CBV
+    cbvHeapDesc.NumDescriptors = MaxObjects;                              // 1オブジェクト=1CBV
     cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;        // シェーダ可視
 
     HRESULT hr = device->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&m_cbvHeap));
-    if (FAILED(hr))
-    {
-        LogHRESULTError(hr, "CreateDescriptorHeap for CBV failed");
-        return false;
-    }
+    if (FAILED(hr)) { LogHRESULTError(hr, "CreateDescriptorHeap(CBV)"); return false; }
 
-    // Upload ヒープに全オブジェクト分の CB を敷き詰める
-    //  - CPU 書き込み / GPU 読み取り。頻繁更新向け。静的なら Default ヒープ移行を検討。
     D3D12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-    D3D12_RESOURCE_DESC resourceDesc =
-        CD3DX12_RESOURCE_DESC::Buffer(alignedConstantBufferSize * MaxObjects);
+    D3D12_RESOURCE_DESC   resDesc = CD3DX12_RESOURCE_DESC::Buffer(alignedSize * MaxObjects);
 
-    hr = device->CreateCommittedResource(
-        &heapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &resourceDesc,
-        D3D12_RESOURCE_STATE_GENERIC_READ,  // Upload は GenericRead 固定で OK
-        nullptr,
-        IID_PPV_ARGS(&m_constantBuffer)
-    );
-    if (FAILED(hr))
-    {
-        LogHRESULTError(hr, "CreateCommittedResource for constant buffer failed");
-        return false;
-    }
+    hr = device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &resDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_constantBuffer));
+    if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommittedResource(CB Upload)"); return false; }
 
-    // 永続マップ（persistent mapping）。readRange=(0,0) は CPU Read 無しを意味。
+    // 永続マップ：読み範囲(0,0)は CPU Read しない意図を示す（最適化ヒント）
     CD3DX12_RANGE readRange(0, 0);
     hr = m_constantBuffer->Map(0, &readRange, reinterpret_cast<void**>(&m_pCbvDataBegin));
-    if (FAILED(hr))
-    {
-        LogHRESULTError(hr, "constantBuffer->Map failed");
-        return false;
-    }
+    if (FAILED(hr)) { LogHRESULTError(hr, "constantBuffer->Map"); return false; }
 
-    // 起動時に MaxObjects 分の CBV を一括生成。描画時は「オフセット指定」だけで済む。
+    // CBV を起動時に全スロット分生成。描画時は GPU ハンドルをオフセット指定するだけ。
+    m_cbStride = (sizeof(SceneConstantBuffer) + 255) & ~255u;
+    m_cbvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     {
-        m_cbStride = (sizeof(SceneConstantBuffer) + 255) & ~255u; // 256B アライン
-        m_cbvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
         CD3DX12_CPU_DESCRIPTOR_HANDLE cpu(m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
         for (UINT i = 0; i < MaxObjects; ++i)
         {
@@ -189,569 +163,505 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
         }
     }
 
-    //--- CPU/GPU 同期（Fence + イベント）---------------------------------------
-    // ・フェンス値は単調増加。Signal で「この値に到達したら完了」という目印を打つ。
+    // ---- 9) フェンス & イベント（CPU/GPU 同期の最小構成） ----------------------------
+    //  ・fenceValue は単調増加。Signalで「この値に到達したら完了」の目印を打つ。
     hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
-    if (FAILED(hr))
-    {
-        LogHRESULTError(hr, "CreateFence failed");
-        return false;
-    }
-    fenceValue = 1; // 初回 Signal で 1 を書く
+    if (FAILED(hr)) { LogHRESULTError(hr, "CreateFence"); return false; }
+    fenceValue = 1; // 次回 Signal で 1 を書く（0 は未使用にしておく慣例）
 
     fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr); // auto-reset
-    if (fenceEvent == nullptr)
-    {
-        OutputDebugStringA("[D3D12Renderer ERROR] CreateEvent failed\n");
-        return false;
-    }
+    if (!fenceEvent) { OutputDebugStringA("[D3D12Renderer ERROR] CreateEvent failed\n"); return false; }
 
     return true;
 }
 
 /**
  * Render
- * 概要   : 1 フレーム描画。Present→RTV 遷移 → クリア → シーン描画 → RTV→Present → Present。
- * 前提   : Initialize 済み。m_CurrentScene と m_Camera が妥当。
- * 事後   : フレームが 1 つ進む（m_frameCount++）。本実装では毎回完全同期して戻る。
- * 同期   : 終端で WaitForPreviousFrame() を呼ぶため CPU/GPU の並行性は低いが確実。
- * 注意   : MaxObjects を超える描画要求は安全にスキップ。
+ * 1フレーム描画：PRESENT→RTV遷移→クリア→シーン描画→PRESENT遷移→Present→完全同期。
+ * 重要ポイント：
+ *  - SetDescriptorHeaps はルートテーブル使用前に必ず呼ぶ。
+ *  - バリアの対は「Present→RenderTarget」「RenderTarget→Present」できっちり戻す。
+ *  - 本実装では最後に WaitForPreviousFrame() を呼び、CPU/GPU 完全同期で戻る。
  */
 void D3D12Renderer::Render()
 {
-    HRESULT hr;
+    if (!m_Camera) return; // カメラが無ければ描画不可（安全にスキップ）
 
-    // (1) 当該フレームのアロケータ/コマンドリストを Reset
-    hr = commandAllocators[frameIndex]->Reset();
-    if (FAILED(hr)) { LogHRESULTError(hr, "Render: CommandAllocator Reset failed"); return; }
+    // --- 1) フレームのコマンドアロケータ/コマンドリストを Reset ---------------------
+    // Reset は前回実行分が完了済みであることが前提。本実装は毎フレーム完全同期なのでOK。
+    HRESULT hr = commandAllocators[frameIndex]->Reset();
+    if (FAILED(hr)) { LogHRESULTError(hr, "CommandAllocator->Reset"); return; }
 
     hr = commandList->Reset(commandAllocators[frameIndex].Get(), pipelineState.Get());
-    if (FAILED(hr)) { LogHRESULTError(hr, "Render: CommandList Reset failed"); return; }
+    if (FAILED(hr)) { LogHRESULTError(hr, "CommandList->Reset"); return; }
 
-    // (2) カメラが無ければ描画できない（安全にスキップ）
     using namespace DirectX;
-    if (!m_Camera) return;
-
     const XMMATRIX viewMatrix = m_Camera->GetViewMatrix();
     const XMMATRIX projMatrix = m_Camera->GetProjectionMatrix();
 
-    // (3) Present → RenderTarget へ遷移
+    // 現在のバックバッファに対応する RTV/DSV ハンドルを取得
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(
         rtvHeap->GetCPUDescriptorHandleForHeapStart(), frameIndex, rtvDescriptorSize);
     CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(dsvHeap->GetCPUDescriptorHandleForHeapStart());
 
-    CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        renderTargets[frameIndex].Get(),
-        D3D12_RESOURCE_STATE_PRESENT,
-        D3D12_RESOURCE_STATE_RENDER_TARGET);
-    commandList->ResourceBarrier(1, &barrier);
+    // --- 2) PRESENT → RENDER_TARGET へリソース状態遷移 ------------------------------
+    {
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            renderTargets[frameIndex].Get(),
+            D3D12_RESOURCE_STATE_PRESENT,
+            D3D12_RESOURCE_STATE_RENDER_TARGET);
+        commandList->ResourceBarrier(1, &barrier);
+    }
 
-    // (4) クリア（深度 → カラーバッファ）
-    const float clearColor[] = { 0.2f, 0.2f, 0.4f, 1.0f }; // 背景色（調整用）
+    // --- 3) クリア（深度→カラー） --------------------------------------------------
+    // 深度を先にクリア→カラーをクリア。順序自体は厳密ではないが慣習として読みやすい。
+    const float clearColor[] = { 0.2f, 0.2f, 0.4f, 1.0f }; // 背景色
     commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
     commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 
-    // (5) ルート/ヒープ/ビューポート/シザー/トポロジ
+    // --- 4) 固定状態（ルート/ヒープ/ビューポート/シザー/トポロジ）設定 --------------
     commandList->SetGraphicsRootSignature(rootSignature.Get());
-    ID3D12DescriptorHeap* ppHeaps[] = { m_cbvHeap.Get() }; // SHADER_VISIBLE 必須
-    commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+    ID3D12DescriptorHeap* heaps[] = { m_cbvHeap.Get() };
+    commandList->SetDescriptorHeaps(_countof(heaps), heaps); // ルートテーブル前に必須
 
-    D3D12_VIEWPORT viewport{ 0.0f, 0.0f, (float)m_Width, (float)m_Height, 0.0f, 1.0f };
-    commandList->RSSetViewports(1, &viewport);
-
-    D3D12_RECT scissorRect{ 0, 0, (LONG)m_Width, (LONG)m_Height };
-    commandList->RSSetScissorRects(1, &scissorRect);
+    D3D12_VIEWPORT vp{ 0.f, 0.f, (float)m_Width, (float)m_Height, 0.f, 1.f };
+    D3D12_RECT     sc{ 0, 0, (LONG)m_Width, (LONG)m_Height };
+    commandList->RSSetViewports(1, &vp);
+    commandList->RSSetScissorRects(1, &sc);
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    // (6) シーン全体を走査して描画（GameObject ツリーを再帰）
+    // --- 5) シーン描画（GameObject ツリーを深さ優先で走査） -------------------------
     if (m_CurrentScene)
     {
-        UINT objectIndex = 0; // CBV スロット割当（0..MaxObjects-1）
+        UINT slot = 0; // CBV スロット割り当て（0..MaxObjects-1）。超過は描画スキップ。
 
-        // 内部ラムダ：1 つの GameObject を描画し、子を再帰処理
-        std::function<void(std::shared_ptr<GameObject>)> renderGameObject =
-            [&](std::shared_ptr<GameObject> gameObject)
+        std::function<void(std::shared_ptr<GameObject>)> draw =
+            [&](std::shared_ptr<GameObject> go)
             {
-                if (!gameObject || objectIndex >= MaxObjects) return; // スロット満了で打ち切り
+                if (!go || slot >= MaxObjects) return;
+                auto mr = go->GetComponent<MeshRendererComponent>();
 
-                auto meshRenderer = gameObject->GetComponent<MeshRendererComponent>();
-
-                // 必要な GPU リソースが揃っている場合のみ描画
-                if (meshRenderer && meshRenderer->VertexBuffer && meshRenderer->IndexBuffer && meshRenderer->IndexCount > 0)
+                // 必要リソースが揃っているメッシュのみ描画（頂点/インデックス/カウント）
+                if (mr && mr->VertexBuffer && mr->IndexBuffer && mr->IndexCount > 0)
                 {
-                    // (6-1) MVP（row-major 前提：右から適用 → world * view * proj）
-                    XMMATRIX world = gameObject->Transform->GetWorldMatrix();
+                    // 5-1) 行列の構築（row_major：右から掛ける）
+                    XMMATRIX world = go->Transform->GetWorldMatrix();
                     XMMATRIX mvp = world * viewMatrix * projMatrix;
 
-                    // (6-2) 法線行列：transpose(inverse(world))
-                    //       det が非有限/極小なら単位行列にフォールバック（特異行列対策）
+                    // 5-2) 法線行列 = transpose(inverse(world))。特異な場合は単位行列へフォールバック。
                     XMVECTOR det;
-                    XMMATRIX worldInv = XMMatrixInverse(&det, world);
+                    XMMATRIX inv = XMMatrixInverse(&det, world);
                     float detScalar = XMVectorGetX(det);
-                    if (!std::isfinite(detScalar) || std::fabs(detScalar) < 1e-8f)
-                        worldInv = XMMatrixIdentity();
-                    XMMATRIX worldIT = XMMatrixTranspose(worldInv);
+                    if (!std::isfinite(detScalar) || std::fabs(detScalar) < 1e-8f) inv = XMMatrixIdentity();
+                    XMMATRIX worldIT = XMMatrixTranspose(inv);
 
-                    // (6-3) CB 書き込み（HLSL 側 row_major のため転置不要）
+                    // 5-3) 定数バッファ更新（永続マップ領域へ memcpy。行列の転置は不要）
                     SceneConstantBuffer cb{};
                     XMStoreFloat4x4(&cb.mvp, mvp);
                     XMStoreFloat4x4(&cb.world, world);
                     XMStoreFloat4x4(&cb.worldIT, worldIT);
-
-                    // ライト方向（ワールド空間）：見やすい陰影用に斜め上から
-                    XMVECTOR L = XMVector3Normalize(XMVectorSet(0.0f, -1.0f, -1.0f, 0.0f));
-                    XMStoreFloat3(&cb.lightDir, L);
+                    XMStoreFloat3(&cb.lightDir, XMVector3Normalize(XMVectorSet(0.0f, -1.0f, -1.0f, 0.0f)));
                     cb.pad = 0.0f; // 16B アライン穴埋め
 
-                    // (6-4) Upload バッファ（永続マップ）へ memcpy
-                    //       本実装は毎フレーム完全同期なので、同領域の上書きでも破綻しない。
-                    std::memcpy(
-                        m_pCbvDataBegin + objectIndex * m_cbStride,
-                        &cb,
-                        sizeof(cb));
+                    std::memcpy(m_pCbvDataBegin + slot * m_cbStride, &cb, sizeof(cb));
 
-                    // (6-5) CBV バインド：起動時に作成済みのディスクリプタをオフセットで指定
+                    // 5-4) ルートテーブル b0 を「CBVヒープの slot 番目」に差し替え
                     commandList->SetGraphicsRootDescriptorTable(
-                        0,
-                        CD3DX12_GPU_DESCRIPTOR_HANDLE(
+                        0, CD3DX12_GPU_DESCRIPTOR_HANDLE(
                             m_cbvHeap->GetGPUDescriptorHandleForHeapStart(),
-                            objectIndex,
-                            m_cbvDescriptorSize));
+                            slot, m_cbvDescriptorSize));
 
-                    // (6-6) VB/IB セット → ドロー
-                    commandList->IASetVertexBuffers(0, 1, &meshRenderer->VertexBufferView);
-                    commandList->IASetIndexBuffer(&meshRenderer->IndexBufferView);
-                    commandList->DrawIndexedInstanced(meshRenderer->IndexCount, 1, 0, 0, 0);
+                    // 5-5) VB/IB 設定 → ドロー呼び出し
+                    commandList->IASetVertexBuffers(0, 1, &mr->VertexBufferView);
+                    commandList->IASetIndexBuffer(&mr->IndexBufferView);
+                    commandList->DrawIndexedInstanced(mr->IndexCount, 1, 0, 0, 0);
 
-                    objectIndex++; // 次の CBV スロットへ
+                    ++slot; // 次オブジェクトへ
                 }
 
-                // 子ノードを再帰
-                for (const auto& child : gameObject->GetChildren())
-                    renderGameObject(child);
+                // 子ノードを再帰（深さ優先。順序要件があればここで制御）
+                for (auto& ch : go->GetChildren()) draw(ch);
             };
 
-        // ルートノードから全体を走査
-        for (const auto& rootGo : m_CurrentScene->GetRootGameObjects())
-            renderGameObject(rootGo);
+        for (auto& root : m_CurrentScene->GetRootGameObjects()) draw(root);
     }
-    else
-    {
-        // シーン未設定の通知（Silent fail より問題に気づきやすい）
+    else {
+        // シーン未設定は Silent fail より警告ログで気づけるようにする
         OutputDebugStringA("[D3D12Renderer WARNING] Render: No scene set to render.\n");
     }
 
-    // (7) RenderTarget → Present へ遷移（Present 前に戻し忘れ注意）
-    barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        renderTargets[frameIndex].Get(),
-        D3D12_RESOURCE_STATE_RENDER_TARGET,
-        D3D12_RESOURCE_STATE_PRESENT);
-    commandList->ResourceBarrier(1, &barrier);
+    // --- 6) RENDER_TARGET → PRESENT へ遷移（戻し忘れると Present 失敗） -------------
+    {
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            renderTargets[frameIndex].Get(),
+            D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PRESENT);
+        commandList->ResourceBarrier(1, &barrier);
+    }
 
-    // (8) コマンドを閉じて実行 → Present
+    // --- 7) コマンドを閉じて実行 → Present -----------------------------------------
     hr = commandList->Close();
-    if (FAILED(hr)) { LogHRESULTError(hr, "Render: CommandList Close failed"); return; }
+    if (FAILED(hr)) { LogHRESULTError(hr, "CommandList->Close"); return; }
 
-    ID3D12CommandList* ppCommandLists[] = { commandList.Get() };
-    commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+    ID3D12CommandList* lists[] = { commandList.Get() };
+    commandQueue->ExecuteCommandLists(_countof(lists), lists);
 
-    // Present。引数 (SyncInterval=1) はほぼ vsync ON 相当。
+    // vsync ON（SyncInterval=1）。ティアリング対応する場合は AllowTearing が必要。
     hr = swapChain->Present(1, 0);
-    if (FAILED(hr)) { LogHRESULTError(hr, "Render: Present failed"); return; }
+    if (FAILED(hr)) { LogHRESULTError(hr, "swapChain->Present"); return; }
 
-    // (9) 完全同期してフレームを進行（安全側）
+    // --- 8) 完全同期（安全最優先。高スループット化は将来対応） -----------------------
     WaitForPreviousFrame();
-    m_frameCount++;
+    ++m_frameCount;
 }
 
 /**
  * Resize
- * 概要   : スワップチェインのバッファサイズ変更に伴う RTV/DSV の再作成。
- * 引数   : width/height … 新しいバックバッファサイズ
- * 前提   : Initialize 済み。Resize 中に Render は走らないこと（アプリ側で排他）。
- * 事後   : frameIndex はスワップチェインから取り直し。RTV/DSV は新サイズに更新。
- * 注意   : 0 サイズ（最小化など）は何もしない。
+ * スワップチェインのバッファを作り直し、RTV/DSV を再生成する。
+ * 注意点：
+ *  - 最小化（width/height=0）は何もしない。
+ *  - 使用中のリソース解放はクラッシュの温床 → 先に WaitForGPU() で待ってから解放。
  */
 void D3D12Renderer::Resize(UINT width, UINT height) noexcept
 {
-    if (width == 0 || height == 0) return;
+    if (width == 0 || height == 0) return; // 最小化など
 
-    // 表示側で毎フレーム m_Width/Height を使っているので更新
     m_Width = width;
     m_Height = height;
 
-    // 古いバックバッファ/DSV を GPU が使い終えるまで待つ
-    WaitForGPU(); // ないなら WaitForPreviousFrame() でも可
+    // 旧バックバッファ/DSV を GPU が使い終えるまで待つ（重要）
+    WaitForGPU();
 
-    // 古いリソースを解放（ComPtr は Reset で Release）
-    for (UINT i = 0; i < FrameCount; ++i) {
-        renderTargets[i].Reset();
-    }
+    // 旧リソースを破棄（ComPtr::Reset で Release）
+    for (UINT i = 0; i < FrameCount; ++i) renderTargets[i].Reset();
     depthStencilBuffer.Reset();
-    dsvHeap.Reset(); // 古い DSV ヒープを確実に捨てる
+    dsvHeap.Reset();
 
-    // スワップチェインのサイズだけ変更（フォーマット/フラグは据え置き）
+    // スワップチェインのサイズのみ変更（フォーマット/フラグは据え置き）
     DXGI_SWAP_CHAIN_DESC1 desc1{};
     swapChain->GetDesc1(&desc1);
-    HRESULT hr = swapChain->ResizeBuffers(
-        FrameCount,
-        width, height,
-        desc1.Format,
-        desc1.Flags);
-    if (FAILED(hr)) { LogHRESULTError(hr, "ResizeBuffers failed"); return; }
+    HRESULT hr = swapChain->ResizeBuffers(FrameCount, width, height, desc1.Format, desc1.Flags);
+    if (FAILED(hr)) { LogHRESULTError(hr, "swapChain->ResizeBuffers"); return; }
 
     frameIndex = swapChain->GetCurrentBackBufferIndex();
 
-    // RTV 再作成（ヒープは再利用）
+    // RTV 再作成（RTVヒープは再利用）
     {
         CD3DX12_CPU_DESCRIPTOR_HANDLE rtv(rtvHeap->GetCPUDescriptorHandleForHeapStart());
         for (UINT i = 0; i < FrameCount; ++i) {
             hr = swapChain->GetBuffer(i, IID_PPV_ARGS(&renderTargets[i]));
-            if (FAILED(hr)) { LogHRESULTError(hr, "GetBuffer failed in Resize"); return; }
+            if (FAILED(hr)) { LogHRESULTError(hr, "swapChain->GetBuffer (Resize)"); return; }
             device->CreateRenderTargetView(renderTargets[i].Get(), nullptr, rtv);
             rtv.Offset(1, rtvDescriptorSize);
         }
     }
 
-    // DSV 再作成
+    // 新しいサイズで DSV を作り直す
     if (!CreateDepthStencilBuffer(width, height)) {
         OutputDebugStringA("[Resize] CreateDepthStencilBuffer failed\n");
         return;
     }
-
-    // Viewport/Scissor は Render() 内で m_Width/Height から毎回設定するのでここでは不要
 }
 
 /**
  * Cleanup
- * 概要   : GPU 完了待ち → 永続マップ解除 → OS ハンドル解放。
- * 前提   : どのタイミングで呼ばれても安全（ただし二重呼び出し時の nullptr 保護あり）。
- * 事後   : fenceEvent / m_pCbvDataBegin は無効化。ComPtr は自動的に Release。
+ * GPU 完了待ち → シーンGPUリソース破棄 → コマンド/ヒープ/CB/同期/スワップチェイン/デバイスの順に解放。
+ * いつ呼ばれても安全（nullptr/未初期化を許容）。二重呼び出しも無害。
  */
 void D3D12Renderer::Cleanup()
 {
-    if (device) // device が nullptr の場合、既に破棄済みの可能性
-    {
-        WaitForGPU();
-    }
-    if (fenceEvent) {
-        CloseHandle(fenceEvent);
-        fenceEvent = nullptr;
-    }
+    if (!device) return; // 既に解放済み
+
+    // 0) 完了待ち（Render中に破棄しない）
+    WaitForGPU();
+
+    // 1) シーン配下の GPU リソース（VB/IB等）を全解放
+    ReleaseSceneResources();
+
+    // 2) コマンド/PSO/ルート
+    commandList.Reset();
+    for (UINT i = 0; i < FrameCount; ++i) commandAllocators[i].Reset();
+    pipelineState.Reset();
+    rootSignature.Reset();
+
+    // 3) フレームリソース/ヒープ
+    for (UINT i = 0; i < FrameCount; ++i) renderTargets[i].Reset();
+    rtvHeap.Reset();
+    depthStencilBuffer.Reset();
+    dsvHeap.Reset();
+
+    // 4) CB のマップ解除→解放（永続マップは Unmap を忘れない）
     if (m_constantBuffer && m_pCbvDataBegin) {
-        // 永続マップしていた Upload バッファをアンマップ
         m_constantBuffer->Unmap(0, nullptr);
         m_pCbvDataBegin = nullptr;
     }
-    // ComPtr はスコープ外で自動解放。順序依存が強い場合のみ明示リセットを検討。
-}
+    m_constantBuffer.Reset();
+    m_cbvHeap.Reset();
 
-//======================================================================================
-// 2) 作成系（Initialize から呼ばれる）
-//======================================================================================
+    // 5) 同期/スワップチェイン/キュー
+    if (fenceEvent) { CloseHandle(fenceEvent); fenceEvent = nullptr; }
+    fence.Reset();
+    swapChain.Reset();
+    commandQueue.Reset();
+
+#ifdef _DEBUG
+    {
+        // Live Object 診断：
+        // ・WARNING ブレークは抑制（LiveDevice 警告で止まらないように）
+        // ・終了直前に残オブジェクトをダンプ（原因追跡の手掛かり）
+        ComPtr<ID3D12InfoQueue> iq;
+        if (device && SUCCEEDED(device.As(&iq))) {
+            iq->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, FALSE);
+        }
+        ComPtr<ID3D12DebugDevice> dbg;
+        if (device && SUCCEEDED(device.As(&dbg))) {
+            dbg->ReportLiveDeviceObjects(D3D12_RLDO_DETAIL);
+        }
+    }
+#endif
+
+    // 6) 最後にデバイスを解放
+    device.Reset();
+}
+#pragma endregion // Public API
+
+#pragma region Creation (Device / Queue / SwapChain / RTV / DSV / Allocators / PSO / Mesh)
 
 /**
  * CreateDevice
- * 目的   : DXGI でハードウェアアダプタを列挙し、D3D12 デバイスを作成。
- * 前提   : なし（最初に呼ばれる）。
- * 失敗時 : false（ログ出力）。本実装では WARP へのフォールバックは行わない。
- * デバッグ: _DEBUG 時は DebugLayer を有効化（パフォーマンス低下あり）。
+ * DXGI でハードウェアアダプタを列挙し、D3D12 デバイスを作成する。
+ * 方針：
+ *  - ソフトウェアアダプタ（WARP）はスキップ。WARP フォールバックは本実装では未対応。
+ *  - FeatureLevel 11.0 で作成（必要に応じて引き上げ可能）。
+ *  - _DEBUG 時は DebugLayer を有効化し、InfoQueue でノイズを軽減。
  */
 bool D3D12Renderer::CreateDevice()
 {
     HRESULT hr;
     ComPtr<IDXGIFactory4> factory;
-    UINT createFactoryFlags = 0;
+    UINT flags = 0;
 
 #ifdef _DEBUG
-    // Debug Layer：D3D12 API 呼び出しの前後条件チェックを有効化
+    // DebugLayer を有効化（API 前後条件チェック）。性能は若干下がるが開発時は有用。
+    if (ComPtr<ID3D12Debug> dbg; SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&dbg))))
     {
-        ComPtr<ID3D12Debug> debugController;
-        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
-        {
-            debugController->EnableDebugLayer();
-            createFactoryFlags = DXGI_CREATE_FACTORY_DEBUG;
-        }
+        dbg->EnableDebugLayer();
+        flags = DXGI_CREATE_FACTORY_DEBUG;
     }
 #endif
 
-    hr = CreateDXGIFactory2(createFactoryFlags, IID_PPV_ARGS(&factory));
-    if (FAILED(hr)) { LogHRESULTError(hr, "CreateDXGIFactory2 failed"); return false; }
+    hr = CreateDXGIFactory2(flags, IID_PPV_ARGS(&factory));
+    if (FAILED(hr)) { LogHRESULTError(hr, "CreateDXGIFactory2"); return false; }
 
-    // ハードウェアアダプタ列挙：WARP（ソフトウェア）はスキップ
-    // Feature Level は最小 11.0 で作成（必要に応じて引き上げる）
-    ComPtr<IDXGIAdapter1> hardwareAdapter;
-    for (UINT adapterIndex = 0;; ++adapterIndex)
+    // ハードウェアアダプタを列挙し、最初にデバイス作成に成功したものを採用
+    ComPtr<IDXGIAdapter1> adapter;
+    for (UINT i = 0; ; ++i)
     {
-        if (DXGI_ERROR_NOT_FOUND == factory->EnumAdapters1(adapterIndex, &hardwareAdapter))
-            break;
-
-        DXGI_ADAPTER_DESC1 desc;
-        hardwareAdapter->GetDesc1(&desc);
-        if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
-
-        hr = D3D12CreateDevice(hardwareAdapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
-        if (SUCCEEDED(hr)) break;
+        if (factory->EnumAdapters1(i, &adapter) == DXGI_ERROR_NOT_FOUND) break;
+        DXGI_ADAPTER_DESC1 desc{};
+        adapter->GetDesc1(&desc);
+        if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue; // WARP は除外
+        if (SUCCEEDED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device)))) break;
     }
-
-    if (!device)
-    {
-        // WARP fallback を入れる設計もあるが、本実装では失敗で終了。
+    if (!device) {
         OutputDebugStringA("[D3D12Renderer ERROR] Failed to create D3D12 device\n");
         return false;
     }
 
 #ifdef _DEBUG
-    // ②デバイス作成「後」：InfoQueue でブレーク＆フィルタ設定
-    {
-        Microsoft::WRL::ComPtr<ID3D12InfoQueue> infoQueue;
-        if (SUCCEEDED(device.As(&infoQueue)))
-        {
-            infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
-            infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
-            infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
+    // InfoQueue：重大度ごとにブレーク、不要なメッセージを抑制
+    if (ComPtr<ID3D12InfoQueue> iq; SUCCEEDED(device.As(&iq))) {
+        iq->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+        iq->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
+        iq->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
 
-            // ノイズ抑制(必要に応じて調整)
-            D3D12_MESSAGE_ID denyIds[] = {
-                D3D12_MESSAGE_ID_MAP_INVALID_NULLRANGE,
-                D3D12_MESSAGE_ID_UNMAP_INVALID_NULLRANGE,
-            };
-            D3D12_INFO_QUEUE_FILTER filter{};
-            filter.DenyList.NumIDs = _countof(denyIds);
-            filter.DenyList.pIDList = denyIds;
-            infoQueue->PushStorageFilter(&filter);
-        }
+        D3D12_MESSAGE_ID deny[] = {
+            D3D12_MESSAGE_ID_MAP_INVALID_NULLRANGE,   // Map/Unmap の NULL 範囲ノイズ
+            D3D12_MESSAGE_ID_UNMAP_INVALID_NULLRANGE,
+        };
+        D3D12_INFO_QUEUE_FILTER f{};
+        f.DenyList.NumIDs = _countof(deny);
+        f.DenyList.pIDList = deny;
+        iq->PushStorageFilter(&f);
     }
 #endif
-
     return true;
 }
 
-/**
- * CreateCommandQueue
- * 目的   : Direct（汎用）タイプのコマンドキューを作成。
- * 備考   : Direct は Graphics/Compute/Copy を全て流せる。
- */
+/** CommandQueue（Directタイプ：Graphics/Compute/Copy 全対応） */
 bool D3D12Renderer::CreateCommandQueue()
 {
-    D3D12_COMMAND_QUEUE_DESC queueDesc = {};
-    queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-    queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-
-    HRESULT hr = device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&commandQueue));
-    if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommandQueue failed"); return false; }
+    D3D12_COMMAND_QUEUE_DESC q{};
+    q.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+    q.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE; // タイムスタンプ等が不要ならNONEで十分
+    HRESULT hr = device->CreateCommandQueue(&q, IID_PPV_ARGS(&commandQueue));
+    if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommandQueue"); return false; }
     return true;
 }
 
 /**
- * CreateSwapChain
- * 目的   : スワップチェイン（Flip Discard）を作成。
- * 引数   : hwnd/width/height … 初期化引数そのまま。
- * 注意   : tearing を使う場合は AllowTearing/PresentFlags など追加考慮が必要。
+ * SwapChain（Flip Discard）
+ *  - SyncInterval=1（vsync ON）。ティアリング対応は未実装（AllowTearingが必要）。
+ *  - Alt+Enter の自動フルスクリーン切替は無効化（アプリが制御）。
  */
 bool D3D12Renderer::CreateSwapChain(HWND hwnd, UINT width, UINT height)
 {
     ComPtr<IDXGIFactory4> factory;
-    UINT createFactoryFlags = 0;
+    UINT flags = 0;
 #ifdef _DEBUG
-    createFactoryFlags = DXGI_CREATE_FACTORY_DEBUG;
+    flags = DXGI_CREATE_FACTORY_DEBUG;
 #endif
+    HRESULT hr = CreateDXGIFactory2(flags, IID_PPV_ARGS(&factory));
+    if (FAILED(hr)) { LogHRESULTError(hr, "CreateDXGIFactory2 (SwapChain)"); return false; }
 
-    HRESULT hr = CreateDXGIFactory2(createFactoryFlags, IID_PPV_ARGS(&factory));
-    if (FAILED(hr)) { LogHRESULTError(hr, "CreateDXGIFactory2 failed in CreateSwapChain"); return false; }
+    DXGI_SWAP_CHAIN_DESC1 sc{};
+    sc.BufferCount = FrameCount;                        // バックバッファ枚数はヘッダ側定義に一致
+    sc.Width = width;
+    sc.Height = height;
+    sc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;        // sRGB が必要なら *_UNORM_SRGB
+    sc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    sc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;     // 近年の推奨
+    sc.SampleDesc = { 1, 0 };                            // MSAA 無し
 
-    DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
-    swapChainDesc.BufferCount = FrameCount;              // バックバッファ数（ヘッダ側の定義と一致）
-    swapChainDesc.Width = width;
-    swapChainDesc.Height = height;
-    swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; // sRGB が必要なら *_UNORM_SRGB
-    swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD; // 近年の推奨
-    swapChainDesc.SampleDesc.Count = 1;                              // MSAA 無し
+    ComPtr<IDXGISwapChain1> sc1;
+    hr = factory->CreateSwapChainForHwnd(commandQueue.Get(), hwnd, &sc, nullptr, nullptr, &sc1);
+    if (FAILED(hr)) { LogHRESULTError(hr, "CreateSwapChainForHwnd"); return false; }
 
-    ComPtr<IDXGISwapChain1> swapChain1;
-    hr = factory->CreateSwapChainForHwnd(
-        commandQueue.Get(), hwnd, &swapChainDesc,
-        nullptr, nullptr, &swapChain1);
-    if (FAILED(hr)) { LogHRESULTError(hr, "CreateSwapChainForHwnd failed"); return false; }
+    hr = sc1.As(&swapChain);                             // IDXGISwapChain4 へ昇格
+    if (FAILED(hr)) { LogHRESULTError(hr, "IDXGISwapChain1::As"); return false; }
 
-    hr = swapChain1.As(&swapChain); // IDXGISwapChain4 へ QI
-    if (FAILED(hr)) { LogHRESULTError(hr, "swapChain1.As failed"); return false; }
-
-    hr = factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
-    if (FAILED(hr)) { LogHRESULTError(hr, "MakeWindowAssociation(DXGI_MWA_NO_ALT_ENTER) failed"); /* 継続可 */ }
+    // Alt+Enter を禁止（フルスクリーン切替はアプリ側の明示的操作に統一）
+    factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
 
     frameIndex = swapChain->GetCurrentBackBufferIndex(); // 0..FrameCount-1
     return true;
 }
 
-/**
- * CreateRenderTargetViews
- * 目的   : バックバッファごとの RTV を作成（ディスクリプタヒープに並べる）。
- * 事後   : rtvDescriptorSize を取得。renderTargets[i] が有効化。
- */
+/** RTV（各バックバッファへ RenderTargetView を並べる） */
 bool D3D12Renderer::CreateRenderTargetViews()
 {
-    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
-    rtvHeapDesc.NumDescriptors = FrameCount;
-    rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-    rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE; // CPU からのみ参照
+    D3D12_DESCRIPTOR_HEAP_DESC desc{};
+    desc.NumDescriptors = FrameCount;
+    desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 
-    HRESULT hr = device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&rtvHeap));
-    if (FAILED(hr)) { LogHRESULTError(hr, "CreateDescriptorHeap for RTVs failed"); return false; }
+    HRESULT hr = device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&rtvHeap));
+    if (FAILED(hr)) { LogHRESULTError(hr, "CreateDescriptorHeap(RTV)"); return false; }
 
-    // ヒープ内インクリメント幅を取得（この値でハンドルをオフセットする）
+    // ヒープ内インクリメント幅（この値だけ Offset して次のハンドルへ進む）
     rtvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-    // 先頭 CPU ハンドルから順に RTV を作成
-    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart());
-    for (UINT i = 0; i < FrameCount; i++)
+    CD3DX12_CPU_DESCRIPTOR_HANDLE h(rtvHeap->GetCPUDescriptorHandleForHeapStart());
+    for (UINT i = 0; i < FrameCount; ++i)
     {
         hr = swapChain->GetBuffer(i, IID_PPV_ARGS(&renderTargets[i]));
-        if (FAILED(hr)) { LogHRESULTError(hr, "GetBuffer failed for render target"); return false; }
-
-        device->CreateRenderTargetView(renderTargets[i].Get(), nullptr, rtvHandle);
-        rtvHandle.Offset(1, rtvDescriptorSize);
+        if (FAILED(hr)) { LogHRESULTError(hr, "swapChain->GetBuffer"); return false; }
+        device->CreateRenderTargetView(renderTargets[i].Get(), nullptr, h);
+        h.Offset(1, rtvDescriptorSize);
     }
     return true;
 }
 
 /**
- * CreateDepthStencilBuffer
- * 目的   : 深度バッファ用テクスチャ（Default ヒープ）と DSV を作成。
- * 引数   : width/height … 現在のバックバッファサイズに合わせる。
- * 注意   : Stencil を使う場合はフォーマット/フラグを適切に変更。
+ * DSV + Depth Buffer
+ *  - Defaultヒープに深度テクスチャを確保し、DSV を 1 枚作成。
+ *  - ClearValue はローカルな"ファストクリア"のためのヒント（必須ではない）。
  */
 bool D3D12Renderer::CreateDepthStencilBuffer(UINT width, UINT height)
 {
     HRESULT hr;
 
-    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
-    dsvHeapDesc.NumDescriptors = 1; // 今は 1 枚のみ
-    dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-    dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    D3D12_DESCRIPTOR_HEAP_DESC dsvDesc{};
+    dsvDesc.NumDescriptors = 1;
+    dsvDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    if (FAILED(device->CreateDescriptorHeap(&dsvDesc, IID_PPV_ARGS(&dsvHeap))))
+    {
+        LogHRESULTError(E_FAIL, "CreateDescriptorHeap(DSV)"); return false;
+    }
 
-    hr = device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&dsvHeap));
-    if (FAILED(hr)) { LogHRESULTError(hr, "CreateDescriptorHeap for DSV failed"); return false; }
-
-    // 深度テクスチャ（Default ヒープ）
     D3D12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-    D3D12_RESOURCE_DESC depthStencilDesc = CD3DX12_RESOURCE_DESC::Tex2D(
-        DXGI_FORMAT_D32_FLOAT, width, height, 1, 1, 1, 0,
-        D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
+    D3D12_RESOURCE_DESC    texDesc = CD3DX12_RESOURCE_DESC::Tex2D(
+        DXGI_FORMAT_D32_FLOAT, width, height, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
 
-    D3D12_CLEAR_VALUE depthClearValue{};
-    depthClearValue.Format = DXGI_FORMAT_D32_FLOAT;
-    depthClearValue.DepthStencil.Depth = 1.0f;
-    depthClearValue.DepthStencil.Stencil = 0;
+    D3D12_CLEAR_VALUE clear{};
+    clear.Format = DXGI_FORMAT_D32_FLOAT;
+    clear.DepthStencil.Depth = 1.0f;
+    clear.DepthStencil.Stencil = 0;
 
     hr = device->CreateCommittedResource(
-        &heapProps, D3D12_HEAP_FLAG_NONE,
-        &depthStencilDesc,
-        D3D12_RESOURCE_STATE_DEPTH_WRITE, // 初期状態は深度書き込み可能
-        &depthClearValue,
-        IID_PPV_ARGS(&depthStencilBuffer)
-    );
-    if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommittedResource for DepthStencilBuffer failed"); return false; }
+        &heapProps, D3D12_HEAP_FLAG_NONE, &texDesc,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear, IID_PPV_ARGS(&depthStencilBuffer));
+    if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommittedResource(Depth)"); return false; }
 
-    D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
-    dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
-    dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-
-    device->CreateDepthStencilView(depthStencilBuffer.Get(), &dsvDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart());
+    D3D12_DEPTH_STENCIL_VIEW_DESC v{};
+    v.Format = DXGI_FORMAT_D32_FLOAT;
+    v.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    device->CreateDepthStencilView(depthStencilBuffer.Get(), &v, dsvHeap->GetCPUDescriptorHandleForHeapStart());
     return true;
 }
 
 /**
- * CreateCommandAllocatorsAndList
- * 目的   : FrameCount 分のコマンドアロケータと、使い回す 1 本のコマンドリストを作成。
- * 注意   : アロケータは GPU が使い終えるまで Reset 不可 → フレーム毎に分けるのが定石。
+ * Command Allocators & Command List
+ *  - アロケータは GPU 完了まで Reset 不可 → フレーム数分用意するのが定石。
+ *  - コマンドリストは 1 本を Close→Reset で使い回す。
  */
 bool D3D12Renderer::CreateCommandAllocatorsAndList()
 {
     HRESULT hr;
-    for (UINT i = 0; i < FrameCount; i++)
+    for (UINT i = 0; i < FrameCount; ++i)
     {
         hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocators[i]));
-        if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommandAllocator failed"); return false; }
+        if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommandAllocator"); return false; }
     }
-
-    // コマンドリストは一度作って Close。描画時に Reset して使い回す。
     hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocators[0].Get(), nullptr, IID_PPV_ARGS(&commandList));
-    if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommandList failed"); return false; }
+    if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommandList"); return false; }
 
-    commandList->Close(); // Close→Reset→Close のサイクルで運用
+    // 作成直後は Open 状態なので一度 Close。以後は Reset→記録→Close のサイクルで運用。
+    commandList->Close();
     return true;
 }
 
 /**
- * CreatePipelineState
- * 目的   : ルートシグネチャ（CBV テーブル b0 のみ）と PSO（Lambert 拡散）を作成。
- * シェーダ: HLSL 内の行列は row_major とし、C++ 側からは転置せずに詰める前提。
- * 注意   : 製品コードでは DXC(DXIL) やオフラインコンパイル＋キャッシュが望ましい。
+ * RootSig + PSO（Lambert）
+ *  - ルートは CBV(b0) の 1 テーブルのみという最小構成。
+ *  - HLSL は row_major。法線は inverse-transpose(world) で変換。
+ *  - 製品では DXC(DXIL) やオフラインコンパイル＋キャッシュを推奨。
  */
 bool D3D12Renderer::CreatePipelineState()
 {
-    //--- ルートシグネチャ（CBV テーブル b0 のみ：最小構成） ---
-    CD3DX12_DESCRIPTOR_RANGE ranges[1] = {};
-    ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // b0
+    // ルートシグネチャ（CBV テーブル b0）
+    CD3DX12_DESCRIPTOR_RANGE range{}; range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
+    CD3DX12_ROOT_PARAMETER  root{};  root.InitAsDescriptorTable(1, &range, D3D12_SHADER_VISIBILITY_ALL);
 
-    CD3DX12_ROOT_PARAMETER rootParameters[1] = {};
-    rootParameters[0].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_ALL);
+    D3D12_ROOT_SIGNATURE_DESC rs{};
+    rs.NumParameters = 1; rs.pParameters = &root;
+    rs.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
-    rootSignatureDesc.NumParameters = _countof(rootParameters);
-    rootSignatureDesc.pParameters = rootParameters;
-    // 入力レイアウトを IA で使う（頂点バッファの意味付けを許可）
-    rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+    ComPtr<ID3DBlob> sig, err;
+    HRESULT hr = D3D12SerializeRootSignature(&rs, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err);
+    if (FAILED(hr)) { if (err) OutputDebugStringA((char*)err->GetBufferPointer()); LogHRESULTError(hr, "D3D12SerializeRootSignature"); return false; }
 
-    ComPtr<ID3DBlob> signatureBlob, errorBlob;
-    HRESULT hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
-        if (errorBlob) OutputDebugStringA((char*)errorBlob->GetBufferPointer());
-        LogHRESULTError(hr, "D3D12SerializeRootSignature failed");
-        return false;
-    }
+    hr = device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
+    if (FAILED(hr)) { LogHRESULTError(hr, "CreateRootSignature"); return false; }
 
-    hr = device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
-    if (FAILED(hr)) { LogHRESULTError(hr, "CreateRootSignature failed"); return false; }
-
-    //--- シェーダ（row_major を明示。法線は inverse-transpose(world) で変換） ---
+    // HLSL（可読性のためソース直埋め。実際は .hlsl を別途ビルド/読み込みが望ましい）
     const char* vsSource = R"(
 cbuffer cb0 : register(b0)
 {
-    row_major float4x4 g_mvp;       // C++ 側から「転置せず」詰める前提
+    row_major float4x4 g_mvp;
     row_major float4x4 g_world;
-    row_major float4x4 g_worldIT;   // inverse-transpose(world)
-    float3 g_lightDir;              // World 空間のライト入射方向（向き）
-    float  pad;
+    row_major float4x4 g_worldIT;
+    float3 g_lightDir; float pad;
 };
-
-struct VSInput
-{
-    float3 pos    : POSITION;
-    float3 normal : NORMAL;
-    float4 color  : COLOR;
-};
-
-struct PSInput
-{
-    float4 pos    : SV_POSITION;
-    float3 normal : NORMAL;    // world 空間
-    float4 color  : COLOR;
-};
-
-PSInput main(VSInput input)
-{
+struct VSInput { float3 pos:POSITION; float3 normal:NORMAL; float4 color:COLOR; };
+struct PSInput { float4 pos:SV_POSITION; float3 normal:NORMAL; float4 color:COLOR; };
+PSInput main(VSInput i){
     PSInput o;
-    // mul(行ベクトル, 行列)（row_major 前提）
-    o.pos    = mul(float4(input.pos, 1.0f), g_mvp);
-    o.normal = normalize(mul(input.normal, (float3x3)g_worldIT));
-    o.color  = input.color;
+    o.pos    = mul(float4(i.pos,1), g_mvp);
+    o.normal = normalize(mul(i.normal, (float3x3)g_worldIT));
+    o.color  = i.color;
     return o;
-}
-)";
+})";
 
     const char* psSource = R"(
 cbuffer cb0 : register(b0)
@@ -761,189 +671,143 @@ cbuffer cb0 : register(b0)
     row_major float4x4 g_worldIT;
     float3 g_lightDir; float pad;
 };
+struct PSInput { float4 pos:SV_POSITION; float3 normal:NORMAL; float4 color:COLOR; };
+float4 main(PSInput i) : SV_TARGET {
+    float NdotL = max(dot(normalize(i.normal), -normalize(g_lightDir)), 0.0f);
+    return float4(i.color.rgb * NdotL, i.color.a);
+})";
 
-struct PSInput
-{
-    float4 pos    : SV_POSITION;
-    float3 normal : NORMAL; // world
-    float4 color  : COLOR;
-};
-
-float4 main(PSInput input) : SV_TARGET
-{
-    // シンプル Lambert：入射方向は -g_lightDir として使用
-    float NdotL = max(dot(normalize(input.normal), -normalize(g_lightDir)), 0.0f);
-    float3 diffuse = input.color.rgb * NdotL;
-    return float4(diffuse, input.color.a);
-}
-)";
-
-    ComPtr<ID3DBlob> vertexShader, pixelShader, compileErrors;
-
-    // ※製品では DXC（DXIL）やオフラインコンパイル + シェーダキャッシュ推奨
+    ComPtr<ID3DBlob> VS, PS, ce;
     hr = D3DCompile(vsSource, std::strlen(vsSource), nullptr, nullptr, nullptr, "main", "vs_5_0",
-        D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &vertexShader, &compileErrors);
-    if (FAILED(hr)) {
-        if (compileErrors) OutputDebugStringA((char*)compileErrors->GetBufferPointer());
-        LogHRESULTError(hr, "Vertex shader compilation failed");
-        return false;
-    }
+        D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &VS, &ce);
+    if (FAILED(hr)) { if (ce) OutputDebugStringA((char*)ce->GetBufferPointer()); LogHRESULTError(hr, "VS compile"); return false; }
     hr = D3DCompile(psSource, std::strlen(psSource), nullptr, nullptr, nullptr, "main", "ps_5_0",
-        D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &pixelShader, &compileErrors);
-    if (FAILED(hr)) {
-        if (compileErrors) OutputDebugStringA((char*)compileErrors->GetBufferPointer());
-        LogHRESULTError(hr, "Pixel shader compilation failed");
-        return false;
-    }
+        D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &PS, &ce);
+    if (FAILED(hr)) { if (ce) OutputDebugStringA((char*)ce->GetBufferPointer()); LogHRESULTError(hr, "PS compile"); return false; }
 
     // 頂点レイアウト（P/N/C）：P(12) N(12) C(16) = 40B/頂点
-    D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
-    {
+    D3D12_INPUT_ELEMENT_DESC layout[] = {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
         { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
         { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
 
-    // PSO：基本は D3D12_DEFAULT。Depth/Blend/Rasterizer を素のまま使用。
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-    psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
-    psoDesc.pRootSignature = rootSignature.Get();
-    psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader.Get());
-    psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader.Get());
-    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    psoDesc.DepthStencilState.DepthEnable = TRUE;
-    psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-    psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;  // 近景が小さいZで可視
-    psoDesc.SampleMask = UINT_MAX;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;            // sRGB なら *_UNORM_SRGB
-    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-    psoDesc.SampleDesc.Count = 1;
+    // PSO：基本は D3D12_DEFAULT をそのまま採用。必要最低限の深度設定のみ明示。
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
+    pso.InputLayout = { layout, _countof(layout) };
+    pso.pRootSignature = rootSignature.Get();
+    pso.VS = CD3DX12_SHADER_BYTECODE(VS.Get());
+    pso.PS = CD3DX12_SHADER_BYTECODE(PS.Get());
+    pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    pso.DepthStencilState.DepthEnable = TRUE;                    // 深度テスト有効
+    pso.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL; // 書き込み有効
+    pso.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS; // 小さいZが手前
+    pso.SampleMask = UINT_MAX;
+    pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pso.NumRenderTargets = 1;
+    pso.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;          // sRGBなら *_UNORM_SRGB
+    pso.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    pso.SampleDesc.Count = 1;                                   // MSAA 無し
 
-    hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState));
-    if (FAILED(hr)) { LogHRESULTError(hr, "CreateGraphicsPipelineState failed"); return false; }
+    hr = device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&pipelineState));
+    if (FAILED(hr)) { LogHRESULTError(hr, "CreateGraphicsPipelineState"); return false; }
     return true;
 }
 
 /**
- * CreateMeshRendererResources
- * 目的   : 1 メッシュの頂点/インデックスを Upload ヒープ上に確保し、ビューを設定。
- * 引数   : meshRenderer … メッシュデータ保有コンポーネント
- * 前提   : m_MeshData.Vertices / Indices が妥当（空は不可）。
- * 注意   : 大量/静的データでは Default ヒープへ移し、Copy キューで転送する方が高速。
+ * Mesh（Upload ヒープ版）
+ *  - 頂点/インデックスを Upload ヒープに確保し、Map→memcpy→Unmap で転送。
+ *  - 静的/大規模データは Default ヒープ + Copy キューに乗せる方が高速（将来拡張）。
  */
-bool D3D12Renderer::CreateMeshRendererResources(std::shared_ptr<MeshRendererComponent> meshRenderer)
+bool D3D12Renderer::CreateMeshRendererResources(std::shared_ptr<MeshRendererComponent> mr)
 {
-    // 妥当性チェック：頂点数ゼロ等の空メッシュは描画不可
-    if (!meshRenderer || meshRenderer->m_MeshData.Indices.empty())
-    {
-        OutputDebugStringA("[D3D12Renderer WARNING] CreateMeshRendererResources: Invalid MeshRendererComponent or empty mesh data.\n");
+    if (!mr || mr->m_MeshData.Indices.empty()) {
+        OutputDebugStringA("[D3D12Renderer WARNING] CreateMeshRendererResources: invalid/empty mesh\n");
         return false;
     }
 
     HRESULT hr;
-    // Upload ヒープ（CPU 書き込み / GPU 読み取り）
-    D3D12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    D3D12_HEAP_PROPERTIES heap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 
-    //--- 頂点バッファ ---
-    const UINT vertexBufferSize = (UINT)meshRenderer->m_MeshData.Vertices.size() * sizeof(Vertex);
-    D3D12_RESOURCE_DESC vertexResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
+    // --- 頂点バッファ --------------------------------------------------------------
+    const UINT vbSize = (UINT)mr->m_MeshData.Vertices.size() * sizeof(Vertex);
+    D3D12_RESOURCE_DESC vbDesc = CD3DX12_RESOURCE_DESC::Buffer(vbSize);
+    hr = device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &vbDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&mr->VertexBuffer));
+    if (FAILED(hr)) { LogHRESULTError(hr, "Create VB"); return false; }
 
-    hr = device->CreateCommittedResource(
-        &heapProps, D3D12_HEAP_FLAG_NONE, &vertexResourceDesc,
-        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-        IID_PPV_ARGS(&meshRenderer->VertexBuffer));
-    if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommittedResource for vertex buffer failed in CreateMeshRendererResources"); return false; }
+    {
+        UINT8* dst = nullptr; CD3DX12_RANGE rr(0, 0);
+        hr = mr->VertexBuffer->Map(0, &rr, reinterpret_cast<void**>(&dst));
+        if (FAILED(hr)) { LogHRESULTError(hr, "VB Map"); return false; }
+        std::memcpy(dst, mr->m_MeshData.Vertices.data(), vbSize);
+        mr->VertexBuffer->Unmap(0, nullptr);
+    }
+    mr->VertexBufferView.BufferLocation = mr->VertexBuffer->GetGPUVirtualAddress();
+    mr->VertexBufferView.StrideInBytes = sizeof(Vertex);
+    mr->VertexBufferView.SizeInBytes = vbSize;
 
-    // Map→memcpy→Unmap（CPU→Upload）。readRange=(0,0) は CPU Read 無し。
-    UINT8* pVertexDataBegin = nullptr;
-    CD3DX12_RANGE readRange(0, 0);
-    hr = meshRenderer->VertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin));
-    if (FAILED(hr)) { LogHRESULTError(hr, "Vertex buffer Map failed in CreateMeshRendererResources"); return false; }
-    std::memcpy(pVertexDataBegin, meshRenderer->m_MeshData.Vertices.data(), vertexBufferSize);
-    meshRenderer->VertexBuffer->Unmap(0, nullptr);
+    // --- インデックスバッファ ------------------------------------------------------
+    const UINT ibSize = (UINT)mr->m_MeshData.Indices.size() * sizeof(unsigned int);
+    D3D12_RESOURCE_DESC ibDesc = CD3DX12_RESOURCE_DESC::Buffer(ibSize);
+    hr = device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &ibDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&mr->IndexBuffer));
+    if (FAILED(hr)) { LogHRESULTError(hr, "Create IB"); return false; }
 
-    meshRenderer->VertexBufferView.BufferLocation = meshRenderer->VertexBuffer->GetGPUVirtualAddress();
-    meshRenderer->VertexBufferView.StrideInBytes = sizeof(Vertex);
-    meshRenderer->VertexBufferView.SizeInBytes = vertexBufferSize;
+    {
+        UINT8* dst = nullptr; CD3DX12_RANGE rr(0, 0);
+        hr = mr->IndexBuffer->Map(0, &rr, reinterpret_cast<void**>(&dst));
+        if (FAILED(hr)) { LogHRESULTError(hr, "IB Map"); return false; }
+        std::memcpy(dst, mr->m_MeshData.Indices.data(), ibSize);
+        mr->IndexBuffer->Unmap(0, nullptr);
+    }
+    mr->IndexBufferView.BufferLocation = mr->IndexBuffer->GetGPUVirtualAddress();
+    mr->IndexBufferView.Format = DXGI_FORMAT_R32_UINT; // 32bit index（16bitなら R16_UINT）
+    mr->IndexBufferView.SizeInBytes = ibSize;
 
-    //--- インデックスバッファ ---
-    const UINT indexBufferSize = (UINT)meshRenderer->m_MeshData.Indices.size() * sizeof(unsigned int);
-    D3D12_RESOURCE_DESC indexResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(indexBufferSize);
-
-    hr = device->CreateCommittedResource(
-        &heapProps, D3D12_HEAP_FLAG_NONE, &indexResourceDesc,
-        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-        IID_PPV_ARGS(&meshRenderer->IndexBuffer));
-    if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommittedResource for index buffer failed in CreateMeshRendererResources"); return false; }
-
-    UINT8* pIndexDataBegin = nullptr;
-    hr = meshRenderer->IndexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pIndexDataBegin));
-    if (FAILED(hr)) { LogHRESULTError(hr, "Index buffer Map failed in CreateMeshRendererResources"); return false; }
-    std::memcpy(pIndexDataBegin, meshRenderer->m_MeshData.Indices.data(), indexBufferSize);
-    meshRenderer->IndexBuffer->Unmap(0, nullptr);
-
-    meshRenderer->IndexBufferView.BufferLocation = meshRenderer->IndexBuffer->GetGPUVirtualAddress();
-    meshRenderer->IndexBufferView.Format = DXGI_FORMAT_R32_UINT; // 32bit index。16bit なら R16_UINT
-    meshRenderer->IndexBufferView.SizeInBytes = indexBufferSize;
-
-    meshRenderer->IndexCount = (UINT)meshRenderer->m_MeshData.Indices.size();
+    mr->IndexCount = (UINT)mr->m_MeshData.Indices.size();
     return true;
 }
+#pragma endregion // Creation
 
-//======================================================================================
-// 3) 同期・ユーティリティ
-//======================================================================================
+#pragma region Sync & Utilities (Wait / Draw / Release)
 
 /**
  * WaitForPreviousFrame
- * 目的   : 現在のキューにフェンス値を Signal → まだ未達なら OS イベントで待機。
- * 前提   : commandQueue / fence / fenceEvent が有効。
- * 事後   : fenceValue++。frameIndex を最新に更新（Present 後に変わり得る）。
- * 例外   : Signal/SetEventOnCompletion 失敗時は runtime_error を投げる。
+ * 現在のキューにフェンス値を Signal → 未達なら OS イベントで待機 → 値を進め、frameIndex 更新。
+ * 失敗時：runtime_error を投げる（この先の処理継続は危険なため）。
  */
 void D3D12Renderer::WaitForPreviousFrame()
 {
     HRESULT hr = commandQueue->Signal(fence.Get(), fenceValue);
-    if (FAILED(hr))
-    {
-        LogHRESULTError(hr, "WaitForPreviousFrame: commandQueue->Signal failed");
-        throw std::runtime_error("commandQueue->Signal failed");
-    }
+    if (FAILED(hr)) { LogHRESULTError(hr, "Signal"); throw std::runtime_error("Signal failed"); }
 
     if (fence->GetCompletedValue() < fenceValue)
     {
         hr = fence->SetEventOnCompletion(fenceValue, fenceEvent);
-        if (FAILED(hr))
-        {
-            LogHRESULTError(hr, "WaitForPreviousFrame: fence->SetEventOnCompletion failed");
-            throw std::runtime_error("fence->SetEventOnCompletion failed");
-        }
-        // GPU がフェンス値に到達するまで待機（ブロッキング）
-        WaitForSingleObject(fenceEvent, INFINITE);
+        if (FAILED(hr)) { LogHRESULTError(hr, "SetEventOnCompletion"); throw std::runtime_error("SetEventOnCompletion failed"); }
+        WaitForSingleObject(fenceEvent, INFINITE); // ブロッキング待機
     }
-    fenceValue++; // 次のフレームで使う値へ進める
+    ++fenceValue; // 次フレーム目印
 
-    // Present 後の最新バックバッファ番号を取得（トリプルバッファ等で変わる）
+    // Present 後に変化し得る現在のバックバッファ番号を取得
     frameIndex = swapChain->GetCurrentBackBufferIndex();
 }
 
 /**
  * WaitForGPU
- * 目的   : 例外を投げない簡易待機。Resize などで「とりあえず待つ」用途に。
- * 注意   : 失敗しても戻り値無し（ベストエフォート）。堅牢性が必要なら WaitForPreviousFrame を使用。
+ * 例外を投げない簡易待機。Resize 等の「とりあえず待つ」用途に。
+ * 失敗しても戻り値無し（ベストエフォート）。
  */
 void D3D12Renderer::WaitForGPU() noexcept
 {
     if (!commandQueue || !fence) return;
-    const UINT64 value = ++fenceValue;
-    if (FAILED(commandQueue->Signal(fence.Get(), value))) return;
-
-    if (fence->GetCompletedValue() < value) {
-        if (SUCCEEDED(fence->SetEventOnCompletion(value, fenceEvent))) {
+    const UINT64 v = ++fenceValue;
+    if (FAILED(commandQueue->Signal(fence.Get(), v))) return;
+    if (fence->GetCompletedValue() < v) {
+        if (SUCCEEDED(fence->SetEventOnCompletion(v, fenceEvent))) {
             WaitForSingleObject(fenceEvent, INFINITE);
         }
     }
@@ -951,17 +815,45 @@ void D3D12Renderer::WaitForGPU() noexcept
 
 /**
  * DrawMesh
- * 目的   : 既に PSO/ルート/CBV/RT 等が設定済みであることを前提に、単一メッシュを即時ドロー。
- * 前提   : commandList は Recording 中、IA/CBV/RS 等は適切に設定済み。
- * 注意   : 外部から呼ぶ際は「呼び出し前の前提条件」を満たすこと。
+ * 前提：
+ *  - 既に PSO/ルート/CBV/RT/ビューポート/シザーなどが設定済みであること。
+ *  - commandList は記録中（Reset〜Closeの間）。
  */
-void D3D12Renderer::DrawMesh(MeshRendererComponent* meshRenderer)
+void D3D12Renderer::DrawMesh(MeshRendererComponent* mr)
 {
-    if (!meshRenderer) return;
-
-    commandList->IASetVertexBuffers(0, 1, &meshRenderer->VertexBufferView);
-    commandList->IASetIndexBuffer(&meshRenderer->IndexBufferView);
+    if (!mr) return;
+    commandList->IASetVertexBuffers(0, 1, &mr->VertexBufferView);
+    commandList->IASetIndexBuffer(&mr->IndexBufferView);
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    commandList->DrawIndexedInstanced(meshRenderer->IndexCount, 1, 0, 0, 0);
+    commandList->DrawIndexedInstanced(mr->IndexCount, 1, 0, 0, 0);
 }
+
+/**
+ * ReleaseSceneResources
+ * シーン配下の GPU リソース(VB/IB/SRV/テクスチャ等)を安全に解放。
+ * 注意：呼び出し前に GPU 完了待ち済みであること（Resize/Cleanup 内から呼ぶ）。
+ */
+void D3D12Renderer::ReleaseSceneResources()
+{
+    if (!m_CurrentScene) return;
+
+    for (const auto& root : m_CurrentScene->GetRootGameObjects()) {
+        std::function<void(std::shared_ptr<GameObject>)> walk =
+            [&](std::shared_ptr<GameObject> go)
+            {
+                if (!go) return;
+                if (auto mr = go->GetComponent<MeshRendererComponent>()) {
+                    mr->IndexBuffer.Reset();
+                    mr->VertexBuffer.Reset();
+                    // SRV/テクスチャ等を持たせた場合はここで Reset を追加
+                }
+                for (auto& ch : go->GetChildren()) walk(ch);
+            };
+        walk(root);
+    }
+
+    // 参照を切って上位のライフサイクルへ返す
+    m_Camera.reset();
+    m_CurrentScene.reset();
+}
+#pragma endregion // Sync & Utilities
