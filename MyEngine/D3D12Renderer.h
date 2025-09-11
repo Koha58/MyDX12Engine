@@ -131,6 +131,9 @@ private:
     UINT frameIndex = 0;                        // 現在のバックバッファ Index（swapChain 由来）
     UINT m_frameCount = 0;                      // Present 回数（統計/アニメ制御など）
 
+    UINT m_cbStride = 0;                   // 1オブジェクト分のCBサイズ(256Bアライン)
+    UINT m_cbvDescriptorSize = 0;          // CBV/SRV/UAV ヒープのインクリメント幅
+
     // 予備（未使用/拡張用）。別コマンドリストを追加したい時などに転用可。
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_CommandList;
 

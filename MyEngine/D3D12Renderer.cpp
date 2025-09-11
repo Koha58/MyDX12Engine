@@ -19,10 +19,11 @@
 
 #include "D3D12Renderer.h"            // このレンダラーの宣言（FrameCount などはヘッダ側を参照）
 #include "SceneConstantBuffer.h"      // C++/HLSL 間でメモリレイアウトを一致させる定数バッファ構造体
+#include "d3dx12.h"                   // CD3DX12_* ヘルパ（DX12公式サンプルの便利ラッパ群）
 
 #include <stdexcept>                  // 致命的エラー時に例外を投げる
 #include <d3dcompiler.h>              // ランタイム HLSL コンパイル（D3DCompile）
-#include "d3dx12.h"                   // CD3DX12_* ヘルパ（DX12公式サンプルの便利ラッパ群）
+#include <d3d12sdklayers.h>           
 #include <sstream>                    // デバッグ出力の整形
 #include <comdef.h>                   // _com_error（HRESULT→人間可読メッセージ）
 #include <functional>                 // 再帰ラムダ用
@@ -174,17 +175,17 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
 
     // 起動時に MaxObjects 分の CBV を一括生成。描画時は「オフセット指定」だけで済む。
     {
-        const UINT cbStride = (sizeof(SceneConstantBuffer) + 255) & ~255u; // 256B アライン
-        const UINT cbvInc = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        m_cbStride = (sizeof(SceneConstantBuffer) + 255) & ~255u; // 256B アライン
+        m_cbvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
         CD3DX12_CPU_DESCRIPTOR_HANDLE cpu(m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
         for (UINT i = 0; i < MaxObjects; ++i)
         {
             D3D12_CONSTANT_BUFFER_VIEW_DESC d{};
-            d.BufferLocation = m_constantBuffer->GetGPUVirtualAddress() + i * cbStride;
-            d.SizeInBytes = cbStride; // 256 の倍数必須
+            d.BufferLocation = m_constantBuffer->GetGPUVirtualAddress() + i * m_cbStride;
+            d.SizeInBytes = m_cbStride; // 256 の倍数必須
             device->CreateConstantBufferView(&d, cpu);
-            cpu.Offset(1, cbvInc);
+            cpu.Offset(1, m_cbvDescriptorSize);
         }
     }
 
@@ -268,21 +269,13 @@ void D3D12Renderer::Render()
     {
         UINT objectIndex = 0; // CBV スロット割当（0..MaxObjects-1）
 
-        const UINT alignedConstantBufferSize =
-            (sizeof(SceneConstantBuffer) + D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT - 1)
-            & ~(D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT - 1);
-
-        const UINT cbvDescriptorSize =
-            device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
         // 内部ラムダ：1 つの GameObject を描画し、子を再帰処理
         std::function<void(std::shared_ptr<GameObject>)> renderGameObject =
             [&](std::shared_ptr<GameObject> gameObject)
             {
                 if (!gameObject || objectIndex >= MaxObjects) return; // スロット満了で打ち切り
 
-                std::shared_ptr<MeshRendererComponent> meshRenderer =
-                    gameObject->GetComponent<MeshRendererComponent>();
+                auto meshRenderer = gameObject->GetComponent<MeshRendererComponent>();
 
                 // 必要な GPU リソースが揃っている場合のみ描画
                 if (meshRenderer && meshRenderer->VertexBuffer && meshRenderer->IndexBuffer && meshRenderer->IndexCount > 0)
@@ -314,7 +307,7 @@ void D3D12Renderer::Render()
                     // (6-4) Upload バッファ（永続マップ）へ memcpy
                     //       本実装は毎フレーム完全同期なので、同領域の上書きでも破綻しない。
                     std::memcpy(
-                        m_pCbvDataBegin + objectIndex * alignedConstantBufferSize,
+                        m_pCbvDataBegin + objectIndex * m_cbStride,
                         &cb,
                         sizeof(cb));
 
@@ -324,7 +317,7 @@ void D3D12Renderer::Render()
                         CD3DX12_GPU_DESCRIPTOR_HANDLE(
                             m_cbvHeap->GetGPUDescriptorHandleForHeapStart(),
                             objectIndex,
-                            cbvDescriptorSize));
+                            m_cbvDescriptorSize));
 
                     // (6-6) VB/IB セット → ドロー
                     commandList->IASetVertexBuffers(0, 1, &meshRenderer->VertexBufferView);
@@ -508,6 +501,30 @@ bool D3D12Renderer::CreateDevice()
         OutputDebugStringA("[D3D12Renderer ERROR] Failed to create D3D12 device\n");
         return false;
     }
+
+#ifdef _DEBUG
+    // ②デバイス作成「後」：InfoQueue でブレーク＆フィルタ設定
+    {
+        Microsoft::WRL::ComPtr<ID3D12InfoQueue> infoQueue;
+        if (SUCCEEDED(device.As(&infoQueue)))
+        {
+            infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+            infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
+            infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
+
+            // ノイズ抑制(必要に応じて調整)
+            D3D12_MESSAGE_ID denyIds[] = {
+                D3D12_MESSAGE_ID_MAP_INVALID_NULLRANGE,
+                D3D12_MESSAGE_ID_UNMAP_INVALID_NULLRANGE,
+            };
+            D3D12_INFO_QUEUE_FILTER filter{};
+            filter.DenyList.NumIDs = _countof(denyIds);
+            filter.DenyList.pIDList = denyIds;
+            infoQueue->PushStorageFilter(&filter);
+        }
+    }
+#endif
+
     return true;
 }
 
