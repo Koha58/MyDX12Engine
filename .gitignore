@@ -1,14 +1,16 @@
 # ===== Build dirs (どの階層でも効く) =====
-x64/
-x86/
-[Ww]in32/
 [Bb]uild/
 [Bb]in/
 [Oo]bj/
 [Oo]ut/
 [Ll]og/
+
+# 各種ビルド構成フォルダ（ルート直下でもサブフォルダでも無視）
 [Dd]ebug*/
 [Rr]elease*/
+x64/
+x86/
+[Ww]in32/
 
 # ===== Visual Studio / VS Code =====
 .vs/
