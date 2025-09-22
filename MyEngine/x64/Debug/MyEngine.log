@@ -1,5 +1,7 @@
 ﻿  D3D12Renderer.cpp
-  main.cpp
+D:\Users\2312004\Documents\MyEngine\MyEngine\D3D12Renderer.cpp(225,33): warning C4244: '初期化中': 'UINT64' から 'UINT' への変換です。データが失われる可能性があります。
+D:\Users\2312004\Documents\MyEngine\MyEngine\D3D12Renderer.cpp(225,19): warning C4244: '初期化中': 'UINT64' から 'const UINT' への変換です。データが失われる可能性があります。
   MeshRendererComponent.cpp
+  main.cpp
   コードを生成中...
   MyEngine.vcxproj -> D:\Users\2312004\Documents\MyEngine\x64\Debug\MyEngine.exe

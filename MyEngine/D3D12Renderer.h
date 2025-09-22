@@ -31,7 +31,7 @@ class D3D12Renderer
 public:
     // ----------------------------- フレーム二重化 -----------------------------
     // バッファ枚数。2=ダブルバッファ。将来は 3 にすると Present 待ちが減る場合あり。
-    static const UINT FrameCount = 2;
+    static const UINT FrameCount = 3;
 
     // ----------------------------- ライフサイクル -----------------------------
     D3D12Renderer();
@@ -73,8 +73,6 @@ public:
     bool CreateMeshRendererResources(std::shared_ptr<MeshRendererComponent> meshRenderer);
 
     // === 同期・ユーティリティ（必要に応じて外部からも呼べるよう公開） ==========
-    // Fence の Signal→到達待ち。frameIndex を Present 後の最新値に更新。
-    void WaitForPreviousFrame();
 
     // 例外を投げない簡易待機。Resize 等「とりあえず待つ」用途。
     void WaitForGPU() noexcept;
@@ -89,6 +87,14 @@ public:
     UINT GetFrameCount() const { return m_frameCount; }
 
 private:
+
+    struct FrameResource {
+        Microsoft::WRL::ComPtr<ID3D12CommandAllocator>  cmdAlloc; // このフレーム専用
+        Microsoft::WRL::ComPtr<ID3D12Resource>          constantBuffer;  // Upload: MaxObject分
+        UINT8*                                          cbCPU = nullptr; // Map先頭
+        UINT64                                          fenceValue = 0;  // GPU完了印
+    };
+
     // === 内部初期化ヘルパ（Initialize から呼ばれる / 失敗時 false を返す） =========
     bool CreateDevice();                         // アダプタ列挙 → D3D12CreateDevice
     bool CreateCommandQueue();                   // Direct コマンドキュー
@@ -98,7 +104,6 @@ private:
     bool CreateCommandAllocatorsAndList();       // フレーム別アロケータ + 共有 CL
     bool CreatePipelineState();                  // ルートシグネチャ + PSO 構築
 
-private:
     // ======================== D3D12 主要オブジェクト群 =======================
     // ComPtr はスコープ終了で自動 Release。明示 Release 不要。
     Microsoft::WRL::ComPtr<ID3D12Device>                device;         // 論理デバイス
@@ -113,7 +118,6 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource>              depthStencilBuffer; // D32F テクスチャ
 
     // ---- コマンド記録系（フレームごとにアロケータを持つ）----
-    Microsoft::WRL::ComPtr<ID3D12CommandAllocator>      commandAllocators[FrameCount];
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>   commandList;    // 1 本運用（Reset/Close で再利用）
 
     // ---- ルート/パイプライン ----
@@ -122,16 +126,13 @@ private:
 
     // ---- 同期（CPU-GPU）----
     Microsoft::WRL::ComPtr<ID3D12Fence>                 fence;          // GPU 完了報告
-    UINT64                                              fenceValue = 0; // シグナル値（毎フレーム++）
+    UINT64                                              m_nextFenceValue = 1; // シグナル値（毎フレーム++）
     HANDLE                                              fenceEvent = nullptr; // 待機用 Win32 イベント
 
     // ---- 定数バッファ（オブジェクト毎）----
     // ・Upload（CPU 可視）に大きめの単一バッファを確保し、各オブジェクトに 256B 単位で割当。
-    // ・CBV は ShaderVisible ヒープに事前生成しておき、描画時は GPU ハンドルをオフセット指定。
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>        m_cbvHeap;      // CBV/SRV/UAV ヒープ（GPU 可視）
-    Microsoft::WRL::ComPtr<ID3D12Resource>              m_constantBuffer; // Upload ヒープ（永続マップ）
-    UINT8* m_pCbvDataBegin = nullptr; // Map 先頭アドレス
-    UINT                                                m_cbStride = 0;        // 1 オブジェクト分の CB サイズ（256B アライン）
+    FrameResource m_frames[FrameCount];
+    UINT                                                m_cbStride = 256;        // 1 オブジェクト分の CB サイズ（256B アライン）
     UINT                                                m_cbvDescriptorSize = 0; // CBV/SRV/UAV インクリメント幅
 
     // ============================ 状態/サイズ類 ==============================
