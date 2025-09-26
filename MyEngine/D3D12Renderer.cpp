@@ -43,6 +43,10 @@
 #include <cstring>                   // std::strlen / std::memcpy
 #include <dxgi1_6.h>                 // DXGI（SwapChain/Adapter列挙）
 
+#include "imgui.h"
+#include "backends/imgui_impl_win32.h"
+#include "backends/imgui_impl_dx12.h"
+
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -166,37 +170,46 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
     fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr); // auto-reset
     if (!fenceEvent) { OutputDebugStringA("[D3D12Renderer ERROR] CreateEvent failed\n"); return false; }
 
-    // ===== InGui 初期化 =====
+    // ===== ImGui 初期化（新API簡易パス）=====
     {
-        // 1) SRVヒープ(ImGuiがフォントSRVを置く場所)
+        // 1) SRVヒープ（Shader Visible）
         D3D12_DESCRIPTOR_HEAP_DESC h{};
         h.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        h.NumDescriptors = 1;
+        h.NumDescriptors = 1;                         // フォント用。必要なら増やす
         h.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        HRESULT hr = device->CreateDescriptorHeap(&h, IID_PPV_ARGS(&m_imguiSrvHeap));
-        if(FAILED(hr)) { LogHRESULTError(hr, "CreateDescriptionHeap(ImGui SRV)"); return false; }
+        if (FAILED(device->CreateDescriptorHeap(&h, IID_PPV_ARGS(&m_imguiSrvHeap))))
+        {
+            LogHRESULTError(E_FAIL, "CreateDescriptorHeap(ImGui SRV)"); return false;
+        }
 
-        // 2) ImGui本体
+        // 2) Core & Platform
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGui::StyleColorsDark();
-
         ImGui_ImplWin32_Init(hwnd);
-        ImGui_ImplDX12_Init(
-            device.Get(),
-            FrameCount,
-            DXGI_FORMAT_R8G8B8A8_UNORM,
-            m_imguiSrvHeap.Get(),
-            m_imguiSrvHeap->GetCPUDescriptorHandleForHeapStart(),
-            m_imguiSrvHeap->GetGPUDescriptorHandleForHeapStart()
-        );
+
+        // 3) Renderer(DX12) : 必須情報だけ渡す
+        ImGui_ImplDX12_InitInfo ii{};
+        ii.Device = device.Get();
+        ii.CommandQueue = commandQueue.Get();         // 自前のキューを使用
+        ii.RTVFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+        ii.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+        ii.NumFramesInFlight = FrameCount;
+        ii.SrvDescriptorHeap = m_imguiSrvHeap.Get();
+
+        // 単一ディスクリプタ（レガシー互換モード）
+        ii.LegacySingleSrvCpuDescriptor = m_imguiSrvHeap->GetCPUDescriptorHandleForHeapStart();
+        ii.LegacySingleSrvGpuDescriptor = m_imguiSrvHeap->GetGPUDescriptorHandleForHeapStart();
+        // ※ SrvDescriptorAllocFn/FreeFn は nullptr のままでOK（バックエンドが補う）
+
+        ImGui_ImplDX12_Init(&ii);
+
+        // 4) フォント登録（GPUアップロードは描画時に自動）
+        ImGui::GetIO().Fonts->AddFontDefault();
 
         m_imguiInited = true;
-        ImGuiIO& io = ImGui::GetIO();
-        io.Fonts->AddFontDefault();
-        //ImGui_ImplDX12_CreateDeviceObjects();
-        m_imguiFontsUploaded = false;
     }
+
 
     return true;
 }
@@ -230,16 +243,9 @@ void D3D12Renderer::Render()
     hr = commandList->Reset(m_frames[fi].cmdAlloc.Get(), pipelineState.Get());
     if (FAILED(hr)) { LogHRESULTError(hr, "commandList->Reset"); return; }
 
-    if (m_imguiInited && !m_imguiFontsUploaded)
-    {
-        ID3D12DescriptorHeap* heaps[] = { m_imguiSrvHeap.Get() };
-        commandList->SetDescriptorHeaps(1, heaps);
-        m_imguiFontsUploaded = true;
-    }
-
-    using namespace DirectX;
-    const XMMATRIX viewMatrix = m_Camera->GetViewMatrix();
-    const XMMATRIX projMatrix = m_Camera->GetProjectionMatrix();
+    //using namespace DirectX;
+    //const XMMATRIX viewMatrix = m_Camera->GetViewMatrix();
+    //const XMMATRIX projMatrix = m_Camera->GetProjectionMatrix();
 
     // 現在のバックバッファに対応する RTV/DSV ハンドルを取得
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(
@@ -272,26 +278,14 @@ void D3D12Renderer::Render()
     commandList->RSSetScissorRects(1, &sc);
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    // --- 4.5) ImGui: NewFrame(ここからUIを組む) --------------
-    if (m_imguiInited)
-    {
-        ID3D12DescriptorHeap* heaps[] = { m_imguiSrvHeap.Get() };
-        commandList->SetDescriptorHeaps(1, heaps);
-        ImGui_ImplDX12_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-
-        // 簡易オーバーレイ
-        ImGui::Begin("Stats", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-        ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-        ImGui::Text("Size: %u x %u", m_Width, m_Height);
-        ImGui::End();
-    }
-
     // --- 5) シーン描画（GameObject ツリーを深さ優先で走査） -------------------------
     if (m_CurrentScene && m_Camera)
     {
         UINT slot = 0; // CBV スロット割り当て（0..MaxObjects-1）。超過は描画スキップ。
+
+        using namespace DirectX;
+        const XMMATRIX viewMatrix = m_Camera->GetViewMatrix();
+        const XMMATRIX projMatrix = m_Camera->GetProjectionMatrix();
 
         std::function<void(std::shared_ptr<GameObject>)> draw =
             [&](std::shared_ptr<GameObject> go)
@@ -352,10 +346,22 @@ void D3D12Renderer::Render()
         OutputDebugStringA("[D3D12Renderer WARNING] Render: No scene set to render.\n");
     }
 
+    // --- ImGui: UI 描画 --------------------------------------------------------
     if (m_imguiInited)
     {
-        ImGui::Render();
         ID3D12DescriptorHeap* heaps[] = { m_imguiSrvHeap.Get() };
+        commandList->SetDescriptorHeaps(1, heaps);
+
+        ImGui_ImplDX12_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::Begin("Stats", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+        ImGui::Text("Size: %u x %u", m_Width, m_Height);
+        ImGui::End();
+
+        ImGui::Render();
         commandList->SetDescriptorHeaps(1, heaps);
         ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList.Get());
     }
