@@ -18,6 +18,10 @@
 #include "CameraComponent.h"       // View/Projection を提供
 #include "SceneConstantBuffer.h"   // HLSL cbuffer に対応する CPU 側構造体
 #include "d3dx12.h"                // CD3DX12_* ユーティリティ（ヘルパ）
+
+#include "imgui.h"
+#include "backends/imgui_impl_win32.h"
+#include "backends/imgui_impl_dx12.h"
 // =======================================================================
 
 // =======================================================================
@@ -123,6 +127,10 @@ private:
     // ---- ルート/パイプライン ----
     Microsoft::WRL::ComPtr<ID3D12RootSignature>         rootSignature;  // リソース可視化レイアウト
     Microsoft::WRL::ComPtr<ID3D12PipelineState>         pipelineState;  // PSO（VS/PS/RS/DS/Blend 等）
+
+    // ---- ImGUI用(DX12バックエンドが使うSRVヒープ) ----
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>         m_imguiSrvHeap{};
+    bool                                                m_imguiInited = false;
 
     // ---- 同期（CPU-GPU）----
     Microsoft::WRL::ComPtr<ID3D12Fence>                 fence;          // GPU 完了報告

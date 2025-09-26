@@ -3,6 +3,13 @@ D:\Users\2312004\Documents\MyEngine\MyEngine\CameraControllerComponent.cpp;D:\Us
 D:\Users\2312004\Documents\MyEngine\MyEngine\Component.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\Component.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\D3D12Renderer.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\D3D12Renderer.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\GameObject.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\GameObject.obj
+D:\Users\2312004\Documents\MyEngine\MyEngine\Imgui\backends\imgui_impl_dx12.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\imgui_impl_dx12.obj
+D:\Users\2312004\Documents\MyEngine\MyEngine\Imgui\backends\imgui_impl_win32.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\imgui_impl_win32.obj
+D:\Users\2312004\Documents\MyEngine\MyEngine\Imgui\imgui.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\imgui.obj
+D:\Users\2312004\Documents\MyEngine\MyEngine\Imgui\imgui_demo.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\imgui_demo.obj
+D:\Users\2312004\Documents\MyEngine\MyEngine\Imgui\imgui_draw.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\imgui_draw.obj
+D:\Users\2312004\Documents\MyEngine\MyEngine\Imgui\imgui_tables.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\imgui_tables.obj
+D:\Users\2312004\Documents\MyEngine\MyEngine\Imgui\imgui_widgets.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\imgui_widgets.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Input.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\Input.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\main.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\main.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Mesh.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\Mesh.obj

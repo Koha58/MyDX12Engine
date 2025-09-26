@@ -131,44 +131,14 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
     // ---- 8) 定数バッファ（Upload）と CBV を MaxObjects 分まとめて用意 -----------------
     m_cbStride = (sizeof(SceneConstantBuffer) + 255) & ~255u;   // 256Bアライン
 
-    //for (UINT f = 0; f < FrameCount; ++f)
-    //{
-    //    CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
-    //    CD3DX12_RESOURCE_DESC   recDesc = CD3DX12_RESOURCE_DESC::Buffer((UINT64)m_cbStride * MaxObjects /* * MaxObjects: 複数描画するなら拡張 */);
-
-    //    hr = device->CreateCommittedResource(
-    //        &heapProps,
-    //        D3D12_HEAP_FLAG_NONE,
-    //        &recDesc,
-    //        D3D12_RESOURCE_STATE_GENERIC_READ,
-    //        nullptr,
-    //        IID_PPV_ARGS(&m_constantBuffers[f])
-    //    );
-
-    //    if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommitResource(CB Upload)"); return false; }
-
-    //    // 永続マップ (CPU Readしないので readRange=(0,0))
-    //    CD3DX12_RANGE rr(0, 0);
-    //    hr = m_constantBuffers[f]->Map(0, &rr, reinterpret_cast<void**>(&m_pCbvDataBegins[f]));
-    //    if (FAILED(hr)) { LogHRESULTError(hr, "CB Map"); return false; }
-    //}
-    //// ---- 9) フェンス & イベント（CPU/GPU 同期の最小構成） ----------------------------
-    ////  ・fenceValue は単調増加。Signalで「この値に到達したら完了」の目印を打つ。
-    //hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
-    //if (FAILED(hr)) { LogHRESULTError(hr, "CreateFence"); return false; }
-    //fenceValue = 1; // 次回 Signal で 1 を書く（0 は未使用にしておく慣例）
-
     for (UINT f = 0; f < FrameCount; ++f)
     {
-        HRESULT hr = device->CreateCommandAllocator(
-            D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_frames[f].cmdAlloc)
-        );
-
         if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommandAllocator"); return false; }
 
+        // CBは64bitサイズで作成
+        const UINT64 cbBytes = (UINT64)m_cbStride * (UINT64)MaxObjects;
         CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
-        CD3DX12_RESOURCE_DESC   resDesc = CD3DX12_RESOURCE_DESC::Buffer(
-            (UINT)m_cbStride * MaxObjects);
+        CD3DX12_RESOURCE_DESC   resDesc = CD3DX12_RESOURCE_DESC::Buffer(cbBytes);
 
         hr = device->CreateCommittedResource(
             &heapProps,
@@ -179,7 +149,7 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
             IID_PPV_ARGS(&m_frames[f].constantBuffer)
         );
 
-        if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommitResource(CB Upload)"); return false; }
+        if (FAILED(hr)) { LogHRESULTError(hr, "CreateCommittedResource(CB Upload)"); return false; }
 
         // 永続マップ (CPU Readしないので readRange=(0,0))
         CD3DX12_RANGE rr(0, 0);
@@ -196,6 +166,33 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
     fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr); // auto-reset
     if (!fenceEvent) { OutputDebugStringA("[D3D12Renderer ERROR] CreateEvent failed\n"); return false; }
 
+    // ===== InGui 初期化 =====
+    {
+        // 1) SRVヒープ(ImGuiがフォントSRVを置く場所)
+        D3D12_DESCRIPTOR_HEAP_DESC h{};
+        h.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        h.NumDescriptors = 1;
+        h.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        HRESULT hr = device->CreateDescriptorHeap(&h, IID_PPV_ARGS(&m_imguiSrvHeap));
+        if(FAILED(hr)) { LogHRESULTError(hr, "CreateDescriptionHeap(ImGui SRV)"); return false; }
+
+        // 2) ImGui本体
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGui::StyleColorsDark();
+
+        ImGui_ImplWin32_Init(hwnd);
+        ImGui_ImplDX12_Init(
+            device.Get(),
+            FrameCount,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
+            m_imguiSrvHeap.Get(),
+            m_imguiSrvHeap->GetCPUDescriptorHandleForHeapStart(),
+            m_imguiSrvHeap->GetGPUDescriptorHandleForHeapStart()
+        );
+
+    }
+
     return true;
 }
 
@@ -209,20 +206,12 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
  */
 void D3D12Renderer::Render()
 {
-    if (!m_Camera) return; // カメラが無ければ描画不可（安全にスキップ）
-
-    // --- 1) フレームのコマンドアロケータ/コマンドリストを Reset ---------------------
-    // Reset は前回実行分が完了済みであることが前提。本実装は毎フレーム完全同期なのでOK。
-    //HRESULT hr = commandAllocators[frameIndex]->Reset();
-    //if (FAILED(hr)) { LogHRESULTError(hr, "CommandAllocator->Reset"); return; }
-
-    //hr = commandList->Reset(commandAllocators[frameIndex].Get(), pipelineState.Get());
-    //if (FAILED(hr)) { LogHRESULTError(hr, "CommandList->Reset"); return; }
+    //if (!m_Camera) return; // カメラが無ければ描画不可（安全にスキップ）
 
     const UINT fi = frameIndex;
 
     // 未完了ならこのフレームの完了を待つ
-    const UINT fv = m_frames[fi].fenceValue;
+    const UINT64 fv = m_frames[fi].fenceValue;
 
     if (fv != 0 && fence->GetCompletedValue() < fv)
     {
@@ -271,8 +260,22 @@ void D3D12Renderer::Render()
     commandList->RSSetScissorRects(1, &sc);
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+    // --- 4.5) ImGui: NewFrame(ここからUIを組む) --------------
+    if (m_imguiInited)
+    {
+        ImGui_ImplDX12_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+
+        // 簡易オーバーレイ
+        ImGui::Begin("Stats", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+        ImGui::Text("Size: %u x %u", m_Width, m_Height);
+        ImGui::End();
+    }
+
     // --- 5) シーン描画（GameObject ツリーを深さ優先で走査） -------------------------
-    if (m_CurrentScene)
+    if (m_CurrentScene && m_Camera)
     {
         UINT slot = 0; // CBV スロット割り当て（0..MaxObjects-1）。超過は描画スキップ。
 
@@ -333,6 +336,14 @@ void D3D12Renderer::Render()
     else {
         // シーン未設定は Silent fail より警告ログで気づけるようにする
         OutputDebugStringA("[D3D12Renderer WARNING] Render: No scene set to render.\n");
+    }
+
+    if (m_imguiInited)
+    {
+        ImGui::Render();
+        ID3D12DescriptorHeap* heaps[] = { m_imguiSrvHeap.Get() };
+        commandList->SetDescriptorHeaps(1, heaps);
+        ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList.Get());
     }
 
     // --- 6) RENDER_TARGET → PRESENT へ遷移（戻し忘れると Present 失敗） -------------
@@ -449,6 +460,15 @@ void D3D12Renderer::Cleanup()
             fence->SetEventOnCompletion(v, fenceEvent);
             WaitForSingleObject(fenceEvent, INFINITE);
         }
+    }
+
+    if (m_imguiInited)
+    {
+        ImGui_ImplDX12_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();
+        m_imguiSrvHeap.Reset();
+        m_imguiInited = false;
     }
 
     // 1) シーン配下の GPU リソース（VB/IB等）を全解放
