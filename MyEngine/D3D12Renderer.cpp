@@ -191,6 +191,11 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
             m_imguiSrvHeap->GetGPUDescriptorHandleForHeapStart()
         );
 
+        m_imguiInited = true;
+        ImGuiIO& io = ImGui::GetIO();
+        io.Fonts->AddFontDefault();
+        //ImGui_ImplDX12_CreateDeviceObjects();
+        m_imguiFontsUploaded = false;
     }
 
     return true;
@@ -224,6 +229,13 @@ void D3D12Renderer::Render()
     if (FAILED(hr)) { LogHRESULTError(hr, "cmdAlloc->Reset"); return; }
     hr = commandList->Reset(m_frames[fi].cmdAlloc.Get(), pipelineState.Get());
     if (FAILED(hr)) { LogHRESULTError(hr, "commandList->Reset"); return; }
+
+    if (m_imguiInited && !m_imguiFontsUploaded)
+    {
+        ID3D12DescriptorHeap* heaps[] = { m_imguiSrvHeap.Get() };
+        commandList->SetDescriptorHeaps(1, heaps);
+        m_imguiFontsUploaded = true;
+    }
 
     using namespace DirectX;
     const XMMATRIX viewMatrix = m_Camera->GetViewMatrix();
@@ -263,6 +275,8 @@ void D3D12Renderer::Render()
     // --- 4.5) ImGui: NewFrame(ここからUIを組む) --------------
     if (m_imguiInited)
     {
+        ID3D12DescriptorHeap* heaps[] = { m_imguiSrvHeap.Get() };
+        commandList->SetDescriptorHeaps(1, heaps);
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();

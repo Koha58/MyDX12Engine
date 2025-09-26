@@ -130,7 +130,8 @@ private:
 
     // ---- ImGUI用(DX12バックエンドが使うSRVヒープ) ----
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>         m_imguiSrvHeap{};
-    bool                                                m_imguiInited = false;
+    bool                                                 m_imguiInited = false;
+    bool                                                m_imguiFontsUploaded = false;
 
     // ---- 同期（CPU-GPU）----
     Microsoft::WRL::ComPtr<ID3D12Fence>                 fence;          // GPU 完了報告
