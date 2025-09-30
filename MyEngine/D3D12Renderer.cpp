@@ -366,22 +366,34 @@ void D3D12Renderer::Render()
         ImGui::End();
 
         // --- メインメニューバー(Editor ON/OFF) -------------
+        static bool g_ResetEditorLayout = false;
         if (ImGui::BeginMainMenuBar())
         {
             if (ImGui::BeginMenu("Editor"))
             {
                 ImGui::MenuItem("Enable Editor", nullptr, &m_IsEditor);
+
+                if (ImGui::MenuItem("Reset Editor Layout"))
+                {
+                    g_ResetEditorLayout = true;
+                }
                 ImGui::EndMenu();
             }
             ImGui::EndMainMenuBar();
+        }
+
+        if (g_ResetEditorLayout)
+        {
+            ImGui::LoadIniSettingsFromMemory("");
+            g_ResetEditorLayout = false;
         }
 
         // --- Editorウィンドウ -------------
         if (m_IsEditor)
         {
             // Inspector
-            ImGui::SetNextWindowPos(ImVec2(10, 40), ImGuiCond_FirstUseEver);
-            ImGui::SetNextWindowSize(ImVec2(320, 320), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowPos(ImVec2(10, 40), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(320, 320), ImGuiCond_Always);
             ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoCollapse);
 
             if (auto sel = m_Selected.lock())
@@ -398,8 +410,8 @@ void D3D12Renderer::Render()
             ImGui::End();
 
             // Hierarchy
-            ImGui::SetNextWindowPos(ImVec2(10, 380), ImGuiCond_FirstUseEver);
-            ImGui::SetNextWindowSize(ImVec2(320, 300), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowPos(ImVec2(10, 380), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(320, 300), ImGuiCond_Always);
             ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoCollapse);
 
             if (m_CurrentScene)
