@@ -43,10 +43,6 @@
 #include <cstring>                   // std::strlen / std::memcpy
 #include <dxgi1_6.h>                 // DXGI（SwapChain/Adapter列挙）
 
-#include "imgui.h"
-#include "backends/imgui_impl_win32.h"
-#include "backends/imgui_impl_dx12.h"
-
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -195,8 +191,11 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
         // 2) Core & Platform
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
+        ImGuiIO& io = ImGui::GetIO();
+        //io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
         ImGui::StyleColorsDark();
         ImGui_ImplWin32_Init(hwnd);
+
 
         // 3) Renderer(DX12) : 必須情報だけ渡す
         ImGui_ImplDX12_InitInfo ii{};
@@ -363,6 +362,7 @@ void D3D12Renderer::Render()
         ImGui::Begin("Stats", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::Text("Size: %u x %u", m_Width, m_Height);
+        ImGui::Text("ImGui %s", ImGui::GetVersion());
         ImGui::End();
 
         // --- メインメニューバー(Editor ON/OFF) -------------
