@@ -71,8 +71,16 @@ namespace
             OutputDebugStringW(wss.str().c_str());
         }
     }
+
+    // 一時バッファ(毎フレーム再利用)
+    static std::string g_tmpNameBuf;
 }
 #pragma endregion // Includes & Helpers
+
+const char* D3D12Renderer::GONameUTF8(const GameObject* go)
+{
+    return go ? go->Name.c_str() : "(null)";
+}
 
 // 一度に描ける最大数（CBVスロットと一致させる。将来は可変長へ拡張可）
 constexpr UINT MaxObjects = 100;
@@ -92,6 +100,8 @@ D3D12Renderer::D3D12Renderer()
     m_ViewMatrix(DirectX::XMMatrixIdentity()),
     m_ProjectionMatrix(DirectX::XMMatrixIdentity())
 {
+    m_IsEditor = true;  // 起動時はエディタONに
+
     // フレーム別の初期化
     for (UINT f = 0; f < FrameCount; ++f)
     {
@@ -224,8 +234,6 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
  */
 void D3D12Renderer::Render()
 {
-    //if (!m_Camera) return; // カメラが無ければ描画不可（安全にスキップ）
-
     const UINT fi = frameIndex;
 
     // 未完了ならこのフレームの完了を待つ
@@ -242,10 +250,6 @@ void D3D12Renderer::Render()
     if (FAILED(hr)) { LogHRESULTError(hr, "cmdAlloc->Reset"); return; }
     hr = commandList->Reset(m_frames[fi].cmdAlloc.Get(), pipelineState.Get());
     if (FAILED(hr)) { LogHRESULTError(hr, "commandList->Reset"); return; }
-
-    //using namespace DirectX;
-    //const XMMATRIX viewMatrix = m_Camera->GetViewMatrix();
-    //const XMMATRIX projMatrix = m_Camera->GetProjectionMatrix();
 
     // 現在のバックバッファに対応する RTV/DSV ハンドルを取得
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(
@@ -360,6 +364,57 @@ void D3D12Renderer::Render()
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::Text("Size: %u x %u", m_Width, m_Height);
         ImGui::End();
+
+        // --- メインメニューバー(Editor ON/OFF) -------------
+        if (ImGui::BeginMainMenuBar())
+        {
+            if (ImGui::BeginMenu("Editor"))
+            {
+                ImGui::MenuItem("Enable Editor", nullptr, &m_IsEditor);
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
+
+        // --- Editorウィンドウ -------------
+        if (m_IsEditor)
+        {
+            // Inspector
+            ImGui::SetNextWindowPos(ImVec2(10, 40), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(320, 320), ImGuiCond_FirstUseEver);
+            ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoCollapse);
+
+            if (auto sel = m_Selected.lock())
+            {
+                ImGui::Text("Selected: %s", GONameUTF8(sel.get()));
+                ImGui::Separator();
+                ImGui::TextDisabled("Transform will appear here...");
+            }
+            else
+            {
+                ImGui::TextDisabled("No selection");
+            }
+
+            ImGui::End();
+
+            // Hierarchy
+            ImGui::SetNextWindowPos(ImVec2(10, 380), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(320, 300), ImGuiCond_FirstUseEver);
+            ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoCollapse);
+
+            if (m_CurrentScene)
+            {
+                for (auto& root : m_CurrentScene->GetRootGameObjects())
+                {
+                    DrawHierarchyNode(root);
+                }
+            }
+            else
+            {
+                ImGui::TextDisabled("No scene");
+            }
+            ImGui::End();
+        }
 
         ImGui::Render();
         commandList->SetDescriptorHeaps(1, heaps);
@@ -949,6 +1004,48 @@ void D3D12Renderer::DrawMesh(MeshRendererComponent* mr)
     commandList->IASetIndexBuffer(&mr->IndexBufferView);
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->DrawIndexedInstanced(mr->IndexCount, 1, 0, 0, 0);
+}
+
+void D3D12Renderer::DrawHierarchyNode(const std::shared_ptr<GameObject>& go)
+{
+    if (!go) return;
+
+    // 同名でも衝突しないようIDを積む
+    ImGui::PushID(go.get());
+
+    // 選択状態
+    bool isSelected = (!m_Selected.expired() && m_Selected.lock().get() == go.get());
+
+    // 子を持つならツリーノード、持たないならリーフ
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow
+                             | ImGuiTreeNodeFlags_SpanFullWidth
+                             | (isSelected ? ImGuiTreeNodeFlags_Selected : 0);
+
+    if (go->GetChildren().empty())
+    {
+        flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+    }
+
+    bool open = ImGui::TreeNodeEx(GONameUTF8(go.get()), flags);
+
+    // クリックで選択
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+    {
+        m_Selected = go;
+    }
+
+    // 再帰で子を描画
+    if (open && !(flags & ImGuiTreeNodeFlags_NoTreePushOnOpen))
+    {
+        for (auto& ch : go->GetChildren())
+        {
+            DrawHierarchyNode(ch);
+        }
+
+        ImGui::TreePop();
+    }
+
+    ImGui::PopID();
 }
 
 /**

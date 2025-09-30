@@ -149,6 +149,14 @@ private:
     UINT                                                frameIndex = 0; // 現バックバッファ index（Present 後に更新）
     UINT                                                m_frameCount = 0; // Present 回数（統計/アニメ制御など）
 
+    // ============================ エディタ関連 ===============================
+    bool                                                m_IsEditor = true;  // EditorモードON/OFF
+    std::weak_ptr<GameObject>                           m_Selected;         // 選択中のオブジェクト
+
+    // Hierarchy　描画ヘルパ
+    void DrawHierarchyNode(const std::shared_ptr<GameObject>& go);
+    const char* GONameUTF8(const GameObject* go);   // 名前取得(UTF-8化)
+
     // ============================ 高レベル参照 ===============================
     // Renderer は Scene/Camera の「利用者」。寿命は shared_ptr で共有するだけ。
     std::shared_ptr<Scene>                              m_CurrentScene; // 描画対象シーン
