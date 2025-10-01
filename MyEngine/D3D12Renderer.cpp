@@ -366,8 +366,13 @@ void D3D12Renderer::Render()
 
         // メインビューポート全面にDockSpaceを敷く
         const ImGuiViewport* gui_vp = ImGui::GetMainViewport();
+
+        char name[64];
+        ImFormatString(name, IM_ARRAYSIZE(name), "DockSpaceViewport_%08X", gui_vp->ID);
+        ImGuiID dockspace_id = ImHashStr(name);
+
         ImGui::DockSpaceOverViewport(
-            (ImGuiID)0,
+            dockspace_id,
             (const ImGuiViewport*)gui_vp,
             (ImGuiDockNodeFlags)ImGuiDockNodeFlags_PassthruCentralNode,
             (const ImGuiWindowClass*)nullptr
@@ -380,12 +385,8 @@ void D3D12Renderer::Render()
         // 自動で“比率”を維持するか(ONだとリサイズの度に比率で作り直す。OFFだとユーザー操作を尊重)
         static bool s_autoRelayoutOnResize = false;
 
-        ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
-
-        char name[64];
-        ImFormatString(name, IM_ARRAYSIZE(name), "DockSpaceViewport_%08X", gui_vp->ID);
-
         static ImVec2 s_lastWorkSize(0, 0);
+
         if (s_autoRelayoutOnResize &&
             (s_lastWorkSize.x != gui_vp->WorkSize.x || s_lastWorkSize.y != gui_vp->WorkSize.y))
         {
