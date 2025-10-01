@@ -280,10 +280,10 @@ void D3D12Renderer::Render()
     commandList->SetGraphicsRootSignature(rootSignature.Get());
     const UINT f = frameIndex;
 
-    D3D12_VIEWPORT vp{ 0.f, 0.f, (float)m_Width, (float)m_Height, 0.f, 1.f };
-    D3D12_RECT     sc{ 0, 0, (LONG)m_Width, (LONG)m_Height };
-    commandList->RSSetViewports(1, &vp);
-    commandList->RSSetScissorRects(1, &sc);
+    D3D12_VIEWPORT gfx_vp{ 0.f, 0.f, (float)m_Width, (float)m_Height, 0.f, 1.f };
+    D3D12_RECT     gfx_sc{ 0, 0, (LONG)m_Width, (LONG)m_Height };
+    commandList->RSSetViewports(1, &gfx_vp);
+    commandList->RSSetScissorRects(1, &gfx_sc);
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     // --- 5) シーン描画（GameObject ツリーを深さ優先で走査） -------------------------
@@ -365,26 +365,42 @@ void D3D12Renderer::Render()
         ImGui::NewFrame();
 
         // メインビューポート全面にDockSpaceを敷く
-        {
-            const ImGuiViewport* vp = ImGui::GetMainViewport();
-            ImGui::DockSpaceOverViewport(
-                (ImGuiID)0,
-                (const ImGuiViewport*)vp, 
-                (ImGuiDockNodeFlags)ImGuiDockNodeFlags_PassthruCentralNode, 
-                (const ImGuiWindowClass*)nullptr
-            );
-        }
+        const ImGuiViewport* gui_vp = ImGui::GetMainViewport();
+        ImGui::DockSpaceOverViewport(
+            (ImGuiID)0,
+            (const ImGuiViewport*)gui_vp,
+            (ImGuiDockNodeFlags)ImGuiDockNodeFlags_PassthruCentralNode,
+            (const ImGuiWindowClass*)nullptr
+        );
 
         // --- 初期レイアウト(比率で固定：左25％に Inspector、左下25%に Hierarchy) -------------
         static bool s_firstLayout = true;
-        static bool s_reqestResetLayout = false;
+        static bool s_requestResetLayout = false;
+
+        // 自動で“比率”を維持するか(ONだとリサイズの度に比率で作り直す。OFFだとユーザー操作を尊重)
+        static bool s_autoRelayoutOnResize = false;
 
         ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
 
-        if (s_firstLayout || s_reqestResetLayout)
+        char name[64];
+        ImFormatString(name, IM_ARRAYSIZE(name), "DockSpaceViewport_%08X", gui_vp->ID);
+
+        static ImVec2 s_lastWorkSize(0, 0);
+        if (s_autoRelayoutOnResize &&
+            (s_lastWorkSize.x != gui_vp->WorkSize.x || s_lastWorkSize.y != gui_vp->WorkSize.y))
+        {
+            if (s_lastWorkSize.x > 0 && s_lastWorkSize.y)
+            {
+                s_requestResetLayout = true;
+            }
+        }
+
+        s_lastWorkSize = gui_vp->WorkSize;
+
+        if (s_firstLayout || s_requestResetLayout)
         {
             s_firstLayout = false;
-            s_reqestResetLayout = false;
+            s_requestResetLayout = false;
 
             ImGui::DockBuilderRemoveNode(dockspace_id);
             ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
@@ -418,7 +434,7 @@ void D3D12Renderer::Render()
 
                 if (ImGui::MenuItem("Reset Editor Layout"))
                 {
-                    s_reqestResetLayout = true;
+                    s_requestResetLayout = true;
                 }
                 ImGui::EndMenu();
             }
