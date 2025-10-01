@@ -33,6 +33,13 @@
 #include "Input.h"
 #include "CameraComponent.h"
 #include "CameraControllerComponent.h"
+#include "imgui.h"
+#include "imgui_internal.h"
+#include "imgui_impl_win32.h"
+#include "imgui_impl_dx12.h"
+
+IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
+    HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 
 struct AppContext {
@@ -101,6 +108,12 @@ private:
 // ============================================================================
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    // 最初にImGuiへ渡す(ImGuiが処理したらここで終了)
+    if (ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam))
+    {
+        return 0;
+    }
+
     Input::ProcessMessage(message, wParam, lParam); // 入力の反映
 
     AppContext* app = GetApp(hWnd); // カメラ/レンダラへアクセスするため

@@ -42,6 +42,10 @@
 #include <cmath>                     // std::isfinite / std::fabs
 #include <cstring>                   // std::strlen / std::memcpy
 #include <dxgi1_6.h>                 // DXGI（SwapChain/Adapter列挙）
+#include "imgui.h"
+#include "imgui_internal.h"
+#include "imgui_impl_win32.h"
+#include "imgui_impl_dx12.h"
 
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "d3d12.lib")
@@ -390,7 +394,7 @@ void D3D12Renderer::Render()
         if (s_autoRelayoutOnResize &&
             (s_lastWorkSize.x != gui_vp->WorkSize.x || s_lastWorkSize.y != gui_vp->WorkSize.y))
         {
-            if (s_lastWorkSize.x > 0 && s_lastWorkSize.y)
+            if (s_lastWorkSize.x > 0 && s_lastWorkSize.y > 0)
             {
                 s_requestResetLayout = true;
             }
@@ -405,7 +409,7 @@ void D3D12Renderer::Render()
 
             ImGui::DockBuilderRemoveNode(dockspace_id);
             ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
-            ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->WorkSize);
+            ImGui::DockBuilderSetNodeSize(dockspace_id, gui_vp->WorkSize);
 
             ImGuiID dock_main = dockspace_id;
             ImGuiID dock_left, dock_left_bottom;
