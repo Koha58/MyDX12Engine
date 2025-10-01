@@ -197,6 +197,10 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
         ImGui::StyleColorsDark();
         ImGui_ImplWin32_Init(hwnd);
 
+        ImGui_ImplWin32_EnableDpiAwareness();
+        io.ConfigFlags |= ImGuiConfigFlags_DpiEnableScaleFonts;
+        io.ConfigFlags |= ImGuiConfigFlags_DpiEnableScaleViewports;
+
 
         // 3) Renderer(DX12) : 必須情報だけ渡す
         ImGui_ImplDX12_InitInfo ii{};
@@ -371,6 +375,33 @@ void D3D12Renderer::Render()
             );
         }
 
+        // --- 初期レイアウト(比率で固定：左25％に Inspector、左下25%に Hierarchy) -------------
+        static bool s_firstLayout = true;
+        static bool s_reqestResetLayout = false;
+
+        ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
+
+        if (s_firstLayout || s_reqestResetLayout)
+        {
+            s_firstLayout = false;
+            s_reqestResetLayout = false;
+
+            ImGui::DockBuilderRemoveNode(dockspace_id);
+            ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
+            ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->WorkSize);
+
+            ImGuiID dock_main = dockspace_id;
+            ImGuiID dock_left, dock_left_bottom;
+            ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Left, 0.25f, &dock_left,        &dock_main);
+            ImGui::DockBuilderSplitNode(dock_left, ImGuiDir_Down, 0.50f, &dock_left_bottom, &dock_left);
+
+            ImGui::DockBuilderDockWindow("Inspector", dock_left);
+            ImGui::DockBuilderDockWindow("Hierarchy", dock_left_bottom);
+
+            ImGui::DockBuilderFinish(dockspace_id);
+        }
+
+
         ImGui::Begin("Stats", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::Text("Size: %u x %u", m_Width, m_Height);
@@ -387,25 +418,17 @@ void D3D12Renderer::Render()
 
                 if (ImGui::MenuItem("Reset Editor Layout"))
                 {
-                    g_ResetEditorLayout = true;
+                    s_reqestResetLayout = true;
                 }
                 ImGui::EndMenu();
             }
             ImGui::EndMainMenuBar();
         }
 
-        if (g_ResetEditorLayout)
-        {
-            ImGui::LoadIniSettingsFromMemory("");
-            g_ResetEditorLayout = false;
-        }
-
         // --- Editorウィンドウ -------------
         if (m_IsEditor)
         {
             // Inspector
-            ImGui::SetNextWindowPos(ImVec2(10, 40), ImGuiCond_Always);
-            ImGui::SetNextWindowSize(ImVec2(320, 320), ImGuiCond_Always);
             ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoCollapse);
 
             if (auto sel = m_Selected.lock())
@@ -422,8 +445,6 @@ void D3D12Renderer::Render()
             ImGui::End();
 
             // Hierarchy
-            ImGui::SetNextWindowPos(ImVec2(10, 380), ImGuiCond_Always);
-            ImGui::SetNextWindowSize(ImVec2(320, 300), ImGuiCond_Always);
             ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoCollapse);
 
             if (m_CurrentScene)
@@ -538,6 +559,12 @@ void D3D12Renderer::Resize(UINT width, UINT height) noexcept
         {
             m_frames[f].cmdAlloc->Reset();
         }
+    }
+
+    // リサイズ後にカメラのアスペクト比を更新
+    if (m_Camera)
+    {
+        m_Camera->SetAspect(static_cast<float>(m_Width) / static_cast<float>(m_Height));
     }
 }
 
