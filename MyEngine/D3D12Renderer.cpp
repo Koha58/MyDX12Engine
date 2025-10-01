@@ -49,6 +49,7 @@
 
 using Microsoft::WRL::ComPtr;
 
+
 // --- 失敗時ログ補助（成功時は何もしない）-----------------------------------------
 // ・DirectXの関数は HRESULT で返ってくる。失敗時に OS 側の説明文字列を付けて出力する。
 // ・例外は投げない（投げる箇所は別途明示）。復帰可能性がある部分は戻り値で伝える。
@@ -192,7 +193,7 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO();
-        //io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
         ImGui::StyleColorsDark();
         ImGui_ImplWin32_Init(hwnd);
 
@@ -358,6 +359,17 @@ void D3D12Renderer::Render()
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
+
+        // メインビューポート全面にDockSpaceを敷く
+        {
+            const ImGuiViewport* vp = ImGui::GetMainViewport();
+            ImGui::DockSpaceOverViewport(
+                (ImGuiID)0,
+                (const ImGuiViewport*)vp, 
+                (ImGuiDockNodeFlags)ImGuiDockNodeFlags_PassthruCentralNode, 
+                (const ImGuiWindowClass*)nullptr
+            );
+        }
 
         ImGui::Begin("Stats", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
