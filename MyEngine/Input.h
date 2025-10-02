@@ -15,6 +15,7 @@ enum class KeyCode
     D = 'D',
     Q = 'Q',
     E = 'E',
+    F = 'F',
 
     Space = VK_SPACE,    // スペースキー
     Escape = VK_ESCAPE,   // Esc キー
@@ -24,6 +25,8 @@ enum class KeyCode
     Down = VK_DOWN,     // ↓
     LeftControl = VK_LCONTROL, // 左Ctrl
     RightControl = VK_RCONTROL, // 右Ctrl
+    LeftAlt = VK_LMENU,
+    RightAlt = VK_RMENU,
 };
 
 // ============================================================================
@@ -97,6 +100,14 @@ public:
     // - CameraController などの回転処理に利用
     static MouseDelta GetMouseDelta();
 
+    // ホイール差分API
+    static float GetMouseScrollDelta();
+
+    // 1フレームのマウス移動量
+    static float GetMouseDeltaX();
+    static float GetMouseDeltaY();
+
+
 private:
     // --------------------------- 内部データ ---------------------------
     // キーボード入力状態
@@ -110,4 +121,6 @@ private:
     // マウス座標（スクリーン座標、ピクセル単位）
     static int m_MouseX;
     static int m_MouseY;
+
+    static float m_MouseWheel;
 };

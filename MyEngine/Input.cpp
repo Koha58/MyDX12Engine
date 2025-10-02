@@ -18,6 +18,9 @@ bool Input::m_PreviousMouse[3] = { false };   // 前フレームのマウスボタン
 int Input::m_MouseX = 0;
 int Input::m_MouseY = 0;
 
+// ホイール差分(1フレームの加算値)
+float Input::m_MouseWheel = 0.0f;
+
 // -------------------------------------------------------------
 // 初期化
 //  - 全キー・マウスボタン状態をクリア
@@ -28,6 +31,8 @@ void Input::Initialize()
     ZeroMemory(m_PreviousKeys, sizeof(m_PreviousKeys));
     ZeroMemory(m_CurrentMouse, sizeof(m_CurrentMouse));
     ZeroMemory(m_PreviousMouse, sizeof(m_PreviousMouse));
+
+    m_MouseWheel = 0.0f;
 }
 
 // -------------------------------------------------------------
@@ -49,13 +54,36 @@ MouseDelta Input::GetMouseDelta()
     return { dx, dy };
 }
 
+float Input::GetMouseDeltaX()
+{
+    return (float)GetMouseDelta().x;
+}
+
+float Input::GetMouseDeltaY()
+{
+    return (float)GetMouseDelta().y;
+}
+
+// -------------------------------------------------------------
+// ホイール差分の取得(+上/-下)
+//  - 1フレームで累積した値をそのまま返す
+// -------------------------------------------------------------
+float Input::GetMouseScrollDelta()
+{
+    return m_MouseWheel;
+}
+
 // -------------------------------------------------------------
 // 毎フレームの更新
 //  - 「現在の状態」を「前フレーム状態」にコピー
 //  - ProcessMessage() が書き換えた結果を保存する役割
+//  - ホイール差分はフレーム頭でリセット
 // -------------------------------------------------------------
 void Input::Update()
 {
+    // このフレームの処理で使い切るため、先に0クリア
+    m_MouseWheel = 0.0f;
+
     memcpy(m_PreviousKeys, m_CurrentKeys, sizeof(m_CurrentKeys));
     memcpy(m_PreviousMouse, m_CurrentMouse, sizeof(m_CurrentMouse));
 }
@@ -132,8 +160,20 @@ void Input::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
         // 左右 Ctrl の判定（通常 VK_CONTROL で区別がつかないため拡張ビットを見る）
         if (vk == VK_CONTROL)
         {
-            bool isExtended = (lParam & (1 << 24)) != 0; // 24bit が立っていれば右
-            vk = isExtended ? VK_RCONTROL : VK_LCONTROL;
+            bool ext = (lParam & (1 << 24)) != 0; // 24bit が立っていれば右
+            vk = ext ? VK_RCONTROL : VK_LCONTROL;
+        }
+        // 左右Altを識別
+        else if(vk == VK_MENU)
+        {
+            bool ext = (lParam & (1 << 24)) != 0;
+            vk = ext ? VK_RMENU : VK_LMENU;
+        }
+        // 左右Shiftを識別
+        else if (vk == VK_SHIFT)
+        {
+            UINT sc = (UINT)((lParam >> 16) & 0xFF);
+            vk = (int)MapVirtualKey(sc, MAPVK_VSC_TO_VK_EX);
         }
 
         m_CurrentKeys[vk] = true; // 押下状態にする
@@ -151,8 +191,20 @@ void Input::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
 
         if (vk == VK_CONTROL)
         {
-            bool isExtended = (lParam & (1 << 24)) != 0;
-            vk = isExtended ? VK_RCONTROL : VK_LCONTROL;
+            bool ext = (lParam & (1 << 24)) != 0;
+            vk = ext ? VK_RCONTROL : VK_LCONTROL;
+        }
+        // 左右Alt
+        else if (vk == VK_MENU)
+        {
+            bool ext = (lParam & (1 << 24)) != 0;
+            vk = ext ? VK_RMENU : VK_LMENU;
+        }
+        // 左右Shift
+        else if (vk == VK_SHIFT)
+        {
+            UINT sc = (UINT)((lParam >> 16) & 0xFF);
+            vk = (int)MapVirtualKey(sc, MAPVK_VSC_TO_VK_EX);
         }
 
         m_CurrentKeys[vk] = false; // 離された状態にする
@@ -163,7 +215,7 @@ void Input::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
         break;
     }
 
-    // --- マウスボタン ---
+        // --- マウスボタン ---
     case WM_LBUTTONDOWN: m_CurrentMouse[0] = true; break;
     case WM_LBUTTONUP:   m_CurrentMouse[0] = false; break;
     case WM_RBUTTONDOWN: m_CurrentMouse[1] = true; break;
@@ -176,5 +228,12 @@ void Input::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
         m_MouseX = GET_X_LPARAM(lParam); // ウィンドウ内のX座標
         m_MouseY = GET_Y_LPARAM(lParam); // ウィンドウ内のY座標
         break;
+
+        // --- ホイール ---
+    case WM_MOUSEWHEEL:
+        // 1ノッチ=120→ +1/-1の差分に正規化して累積
+        m_MouseWheel += GET_WHEEL_DELTA_WPARAM(wParam) / float(WHEEL_DELTA);
+        break;
+
     }
 }
