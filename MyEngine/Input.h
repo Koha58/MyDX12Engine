@@ -25,6 +25,8 @@ enum class KeyCode
     Down = VK_DOWN,     // Å´
     LeftControl = VK_LCONTROL, // ç∂Ctrl
     RightControl = VK_RCONTROL, // âECtrl
+    LeftShift = VK_LSHIFT,
+    RightShift = VK_RSHIFT,
     LeftAlt = VK_LMENU,
     RightAlt = VK_RMENU,
 };
