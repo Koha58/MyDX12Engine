@@ -133,6 +133,10 @@ private:
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>         m_imguiSrvHeap{};
     bool                                                 m_imguiInited = false;
 
+    // ---- ゲーム描画用SRVヒープ(テクスチャ/StructuredBufferはこちらに) ----
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>         m_gameSrvHeap{};
+    UINT                                                 m_gameSrvDescriptorSize = 0;
+
     // ---- 同期（CPU-GPU）----
     Microsoft::WRL::ComPtr<ID3D12Fence>                 fence;          // GPU 完了報告
     UINT64                                              m_nextFenceValue = 1; // シグナル値（毎フレーム++）

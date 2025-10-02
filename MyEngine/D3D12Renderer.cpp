@@ -181,6 +181,19 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
     fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr); // auto-reset
     if (!fenceEvent) { OutputDebugStringA("[D3D12Renderer ERROR] CreateEvent failed\n"); return false; }
 
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC srv{};
+        srv.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        srv.NumDescriptors = 256;
+        srv.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+
+        hr = device->CreateDescriptorHeap(&srv, IID_PPV_ARGS(&m_gameSrvHeap));
+        if (FAILED(hr)) { LogHRESULTError(hr, "CreateDescriptorHeap(Game SRV)"); return false; }
+
+        m_gameSrvDescriptorSize =
+            device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    }
+
     // ===== ImGui 初期化（新API簡易パス）=====
     {
         // 1) SRVヒープ（Shader Visible）
@@ -228,6 +241,13 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
         m_imguiInited = true;
     }
 
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = "EditorLayout.ini";    // プロジェクト直下に保存
+
+    if (m_Camera)
+    {
+        m_Camera->SetAspect(static_cast<float>(m_Width) / static_cast<float>(m_Height));
+    }
 
     return true;
 }
@@ -289,6 +309,11 @@ void D3D12Renderer::Render()
     commandList->RSSetViewports(1, &gfx_vp);
     commandList->RSSetScissorRects(1, &gfx_sc);
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    {
+        ID3D12DescriptorHeap* gameHeaps[] = { m_gameSrvHeap.Get() };
+        commandList->SetDescriptorHeaps(1, gameHeaps);
+    }
 
     // --- 5) シーン描画（GameObject ツリーを深さ優先で走査） -------------------------
     if (m_CurrentScene && m_Camera)

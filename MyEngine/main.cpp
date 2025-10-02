@@ -120,24 +120,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     switch (message) {
     case WM_SIZE: {
+
         if (!app || wParam == SIZE_MINIMIZED) return 0;
 
-        auto newW = LOWORD(lParam);
-        auto newH = HIWORD(lParam);
+        const UINT newW = LOWORD(lParam);
+        const UINT newH = HIWORD(lParam);
         if (newW == 0 || newH == 0) return 0;
 
-        app->clientW = newW;
-        app->clientH = newH;
+        if (app)
+        {
+            app->clientW = newW;
+            app->clientH = newH;
 
-        if (app->renderer) {
-
-            app->renderer->Resize(newW, newH);
-        }
-
-        if (app->camera) {
-            
-            app->camera->SetAspect(static_cast<float>(newW) /
-                static_cast<float>(newH));
+            // 1) 先にGPUリソースを新サイズで作り直す
+            if (app->renderer)
+            {
+                app->renderer->Resize(newW, newH);
+            }
+            // 2) その後にカメラのアスペクトを更新
+            if (app->camera)
+            {
+                app->camera->SetAspect((float)newW / (float)newH);
+            }
         }
 
         return 0;
