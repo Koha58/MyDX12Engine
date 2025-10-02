@@ -75,6 +75,91 @@ namespace
 
     // 一時バッファ(毎フレーム再利用)
     static std::string g_tmpNameBuf;
+
+    static bool BeginComponent(const char* title, ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen)
+    {
+        // 枠に少し余白
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, 6));
+        ImGui::PushStyleColor(ImGuiCol_Header,        ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered));
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive,  ImGui::GetStyleColorVec4(ImGuiCol_FrameBgActive));
+
+        bool open = ImGui::CollapsingHeader(title, flags);
+
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar();
+
+        if (!open)
+        {
+            return false;
+        }
+
+        // 中身をひとまとめにできるようBeginGroup
+        ImGui::BeginGroup();
+        return true;
+    }
+
+    static void EndComponent()
+    {
+        ImGui::EndGroup();
+
+        // 下線っぽい区切り
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
+
+    static bool DrawVec3Row(const char* label, float& x, float& y, float& z,
+        float labelWidth = 90.0f, float spacing = 6.0f, float dragSpeed = 0.01f)
+    {
+        bool changed = false;
+
+        ImGui::PushID(label);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(spacing, spacing));
+
+        // 左に"Position"等のラベル、右にX/Y/Zの一列
+        if (ImGui::BeginTable("t", 4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings))
+        {
+            ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
+            ImGui::TableSetupColumn("x",     ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("y",     ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("z",     ImGuiTableColumnFlags_WidthStretch);
+
+            ImGui::TableNextRow();
+
+            // ラベル列(左)
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(label);
+
+            // X/Y/Z列
+            auto axisField = [&](const char* ax, float& v)
+                {
+                    ImGui::TableNextColumn();
+
+                    // 軸ラベルを薄く表示→同じ列でそのまま入力欄
+                    ImGui::BeginGroup();
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                    ImGui::TextUnformatted(ax);
+                    ImGui::PopStyleColor();
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(-1.0f); // 列幅いっぱい
+
+                    std::string id = std::string("##") + label + "_" + ax;
+                    changed |= ImGui::DragFloat(id.c_str(),&v, dragSpeed, 0.0f, 0.0f, "%.3f");
+                    ImGui::EndGroup();
+                };
+            axisField("X", x);
+            axisField("Y", y);
+            axisField("Z", z);
+
+            ImGui::EndTable();
+        }
+
+        ImGui::PopStyleVar();
+        ImGui::PopID();
+        return changed;
+    }
 }
 #pragma endregion // Includes & Helpers
 
@@ -481,7 +566,18 @@ void D3D12Renderer::Render()
             {
                 ImGui::Text("Selected: %s", GONameUTF8(sel.get()));
                 ImGui::Separator();
-                ImGui::TextDisabled("Transform will appear here...");
+                
+                // Transformコンポーネント(折り畳み枠)
+                if (BeginComponent("Transform"))
+                {
+                    auto& tr = sel->Transform;
+
+                    DrawVec3Row("Position", tr->Position.x, tr->Position.y, tr->Position.z);
+                    DrawVec3Row("Rotation", tr->Rotation.x, tr->Rotation.y, tr->Rotation.z);
+                    DrawVec3Row("Scale", tr->Scale.x, tr->Scale.y, tr->Scale.z);
+
+                    EndComponent();
+                }
             }
             else
             {
