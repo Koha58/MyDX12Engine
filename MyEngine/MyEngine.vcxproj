@@ -135,6 +135,8 @@
     <ClCompile Include="CameraControllerComponent.cpp" />
     <ClCompile Include="Component.cpp" />
     <ClCompile Include="D3D12Renderer.cpp" />
+    <ClCompile Include="DeviceResources.cpp" />
+    <ClCompile Include="DxDebug.cpp" />
     <ClCompile Include="GameObject.cpp" />
     <ClCompile Include="Imgui\backends\imgui_impl_dx12.cpp" />
     <ClCompile Include="Imgui\backends\imgui_impl_win32.cpp" />
@@ -157,6 +159,8 @@
     <ClInclude Include="CameraControllerComponent.h" />
     <ClInclude Include="Component.h" />
     <ClInclude Include="D3D12Renderer.h" />
+    <ClInclude Include="DeviceResources.h" />
+    <ClInclude Include="DxDebug.h" />
     <ClInclude Include="GameObject.h" />
     <ClInclude Include="Imgui\backends\imgui_impl_dx12.h" />
     <ClInclude Include="Imgui\backends\imgui_impl_win32.h" />

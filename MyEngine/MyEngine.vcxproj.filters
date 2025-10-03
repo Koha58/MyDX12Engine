@@ -78,6 +78,12 @@
     <ClCompile Include="Imgui\backends\imgui_impl_win32.cpp">
       <Filter>Imgui</Filter>
     </ClCompile>
+    <ClCompile Include="DxDebug.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="DeviceResources.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="D3D12Renderer.h">
@@ -142,6 +148,12 @@
     </ClInclude>
     <ClInclude Include="Imgui\backends\imgui_impl_win32.h">
       <Filter>Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="DeviceResources.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="DxDebug.h">
+      <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
