@@ -16,45 +16,81 @@
     <Filter Include="Imgui">
       <UniqueIdentifier>{fb32cbfb-cf4e-4c82-89f0-1fdf7a87c704}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ヘッダー ファイル\Graphics">
+      <UniqueIdentifier>{f1f0eda1-b1fe-4806-afb1-d9d87d1a71b0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Graphics\D3D12">
+      <UniqueIdentifier>{ed83a005-7ef8-4c2e-89d5-9c81f9406128}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Graphics">
+      <UniqueIdentifier>{25d4948d-3b1f-4f63-9599-a30addebec0d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Graphics\D3D12">
+      <UniqueIdentifier>{5cb087c7-cbf4-47e2-b5fc-37e2e34c104b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Editor">
+      <UniqueIdentifier>{69871a26-9839-44d1-a488-ae1dae8f37e7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Graphics\D3D12\Core">
+      <UniqueIdentifier>{5e8d73af-c005-48ce-a7bc-ab3b33b68e0a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Graphics\D3D12\Pipeline">
+      <UniqueIdentifier>{c557d4b1-6433-4dab-a198-46dc3c60ac67}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Graphics\D3D12\Upload">
+      <UniqueIdentifier>{45b7a7e8-5770-467e-9b3d-68f4c65002af}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Graphics\D3D12\Debug">
+      <UniqueIdentifier>{08a351da-16c2-4024-a894-a9a61e4dca8e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Graphics\D3D12\Core">
+      <UniqueIdentifier>{7b514770-2a5b-477a-889e-47ab87a24e49}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Graphics\D3D12\Debug">
+      <UniqueIdentifier>{4a68bffe-35e3-4729-aa03-2a051b3de962}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Graphics\D3D12\Upload">
+      <UniqueIdentifier>{b6f84f5d-7cc2-479a-b673-4dce205341e2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Graphics\D3D12\Pipeline">
+      <UniqueIdentifier>{706bcd65-db9b-4b9c-ab24-a21187651065}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Editor">
+      <UniqueIdentifier>{070ac464-8463-45f2-b4c3-3e0b53a22b99}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Runtime">
+      <UniqueIdentifier>{5d550dfc-bf3f-4850-86b1-5e27b523aace}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Runtime\Scene">
+      <UniqueIdentifier>{02378068-ed03-4a46-bf88-21d04a4f7fdf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Runtime\Components">
+      <UniqueIdentifier>{34817b85-4090-4216-9b91-c7ded7f2a0e7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Runtime">
+      <UniqueIdentifier>{2f225e23-ae8a-442a-8556-1a4ae3cbf688}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Runtime\Scene">
+      <UniqueIdentifier>{5ad49e3f-890f-42ff-983b-607f6ae550e8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Runtime\Components">
+      <UniqueIdentifier>{b2e29498-98b1-495f-989a-30bb922f3bdb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Runtime\Core">
+      <UniqueIdentifier>{1ff95665-7aae-42fd-89bb-e4ba5f570d92}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Runtime\Core">
+      <UniqueIdentifier>{fcfa2533-cbbc-4da1-a0e8-7d9c09d02341}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Runtime\Assets">
+      <UniqueIdentifier>{27a08c75-0726-4dc0-b2f1-0ef8ee8e95f3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Runtime\Assets">
+      <UniqueIdentifier>{e2772a2f-c673-48e4-866a-a8489c0b261e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="D3D12Renderer.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="GameObject.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="Mesh.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="Scene.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="Component.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="TransformComponent.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="SceneManager.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="MeshRendererComponent.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="Time.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="Input.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="CameraComponent.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="CameraControllerComponent.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="Imgui\imgui.cpp">
@@ -78,53 +114,62 @@
     <ClCompile Include="Imgui\backends\imgui_impl_win32.cpp">
       <Filter>Imgui</Filter>
     </ClCompile>
-    <ClCompile Include="DxDebug.cpp">
-      <Filter>ソース ファイル</Filter>
+    <ClCompile Include="Graphics\D3D12\Core\DeviceResources.cpp">
+      <Filter>ソース ファイル\Graphics\D3D12\Core</Filter>
     </ClCompile>
-    <ClCompile Include="DeviceResources.cpp">
-      <Filter>ソース ファイル</Filter>
+    <ClCompile Include="Graphics\D3D12\Core\FrameResources.cpp">
+      <Filter>ソース ファイル\Graphics\D3D12\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\D3D12\Debug\DxDebug.cpp">
+      <Filter>ソース ファイル\Graphics\D3D12\Debug</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\D3D12\Upload\MeshUploader.cpp">
+      <Filter>ソース ファイル\Graphics\D3D12\Upload</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\D3D12\Pipeline\PipelineStateBuilder.cpp">
+      <Filter>ソース ファイル\Graphics\D3D12\Pipeline</Filter>
+    </ClCompile>
+    <ClCompile Include="Runtime\Components\CameraComponent.cpp">
+      <Filter>ソース ファイル\Runtime\Components</Filter>
+    </ClCompile>
+    <ClCompile Include="Runtime\Components\CameraControllerComponent.cpp">
+      <Filter>ソース ファイル\Runtime\Components</Filter>
+    </ClCompile>
+    <ClCompile Include="Runtime\Components\Component.cpp">
+      <Filter>ソース ファイル\Runtime\Components</Filter>
+    </ClCompile>
+    <ClCompile Include="Runtime\Components\MeshRendererComponent.cpp">
+      <Filter>ソース ファイル\Runtime\Components</Filter>
+    </ClCompile>
+    <ClCompile Include="Runtime\Components\TransformComponent.cpp">
+      <Filter>ソース ファイル\Runtime\Components</Filter>
+    </ClCompile>
+    <ClCompile Include="Runtime\Scene\GameObject.cpp">
+      <Filter>ソース ファイル\Runtime\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Runtime\Scene\Scene.cpp">
+      <Filter>ソース ファイル\Runtime\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Runtime\Scene\SceneManager.cpp">
+      <Filter>ソース ファイル\Runtime\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Runtime\Core\Input.cpp">
+      <Filter>ソース ファイル\Runtime\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Runtime\Core\Time.cpp">
+      <Filter>ソース ファイル\Runtime\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Runtime\Assets\Mesh.cpp">
+      <Filter>ソース ファイル\Runtime\Assets</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\D3D12Renderer.cpp">
+      <Filter>ソース ファイル\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Editor\ImGuiLayer.cpp">
+      <Filter>ソース ファイル\Editor</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="D3D12Renderer.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="GameObject.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="Mesh.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="Scene.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="Component.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="TransformComponent.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="MeshRendererComponent.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="SceneManager.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="Time.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="Input.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="CameraComponent.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="CameraControllerComponent.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="SceneConstantBuffer.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
     <ClInclude Include="Imgui\imconfig.h">
       <Filter>Imgui</Filter>
     </ClInclude>
@@ -149,11 +194,65 @@
     <ClInclude Include="Imgui\backends\imgui_impl_win32.h">
       <Filter>Imgui</Filter>
     </ClInclude>
-    <ClInclude Include="DeviceResources.h">
-      <Filter>ヘッダー ファイル</Filter>
+    <ClInclude Include="Graphics\D3D12\Core\DeviceResources.h">
+      <Filter>ヘッダー ファイル\Graphics\D3D12\Core</Filter>
     </ClInclude>
-    <ClInclude Include="DxDebug.h">
-      <Filter>ヘッダー ファイル</Filter>
+    <ClInclude Include="Graphics\D3D12\Core\FrameResources.h">
+      <Filter>ヘッダー ファイル\Graphics\D3D12\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\D3D12\Debug\DxDebug.h">
+      <Filter>ヘッダー ファイル\Graphics\D3D12\Debug</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\D3D12\Pipeline\PipelineStateBuilder.h">
+      <Filter>ヘッダー ファイル\Graphics\D3D12\Pipeline</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\D3D12\Upload\MeshUploader.h">
+      <Filter>ヘッダー ファイル\Graphics\D3D12\Upload</Filter>
+    </ClInclude>
+    <ClInclude Include="Runtime\Components\CameraComponent.h">
+      <Filter>ヘッダー ファイル\Runtime\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Runtime\Components\CameraControllerComponent.h">
+      <Filter>ヘッダー ファイル\Runtime\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Runtime\Components\Component.h">
+      <Filter>ヘッダー ファイル\Runtime\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Runtime\Components\MeshRendererComponent.h">
+      <Filter>ヘッダー ファイル\Runtime\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Runtime\Components\TransformComponent.h">
+      <Filter>ヘッダー ファイル\Runtime\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Runtime\Scene\GameObject.h">
+      <Filter>ヘッダー ファイル\Runtime\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Runtime\Scene\Scene.h">
+      <Filter>ヘッダー ファイル\Runtime\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Runtime\Scene\SceneManager.h">
+      <Filter>ヘッダー ファイル\Runtime\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Runtime\Core\Input.h">
+      <Filter>ヘッダー ファイル\Runtime\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Runtime\Core\Time.h">
+      <Filter>ヘッダー ファイル\Runtime\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Runtime\Assets\Mesh.h">
+      <Filter>ヘッダー ファイル\Runtime\Assets</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\D3D12Renderer.h">
+      <Filter>ヘッダー ファイル\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\SceneConstantBuffer.h">
+      <Filter>ヘッダー ファイル\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Editor\EditorContext.h">
+      <Filter>ヘッダー ファイル\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="Editor\ImGuiLayer.h">
+      <Filter>ヘッダー ファイル\Editor</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
