@@ -200,9 +200,6 @@
     <ClInclude Include="Graphics\D3D12\Core\FrameResources.h">
       <Filter>ヘッダー ファイル\Graphics\D3D12\Core</Filter>
     </ClInclude>
-    <ClInclude Include="Graphics\D3D12\Debug\DxDebug.h">
-      <Filter>ヘッダー ファイル\Graphics\D3D12\Debug</Filter>
-    </ClInclude>
     <ClInclude Include="Graphics\D3D12\Pipeline\PipelineStateBuilder.h">
       <Filter>ヘッダー ファイル\Graphics\D3D12\Pipeline</Filter>
     </ClInclude>

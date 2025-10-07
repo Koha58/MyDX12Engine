@@ -165,7 +165,6 @@
     <ClInclude Include="Graphics\D3D12Renderer.h" />
     <ClInclude Include="Graphics\D3D12\Core\DeviceResources.h" />
     <ClInclude Include="Graphics\D3D12\Core\FrameResources.h" />
-    <ClInclude Include="Graphics\D3D12\Debug\DxDebug.h" />
     <ClInclude Include="Graphics\D3D12\Pipeline\PipelineStateBuilder.h" />
     <ClInclude Include="Graphics\D3D12\Upload\MeshUploader.h" />
     <ClInclude Include="Graphics\SceneConstantBuffer.h" />

@@ -16,7 +16,7 @@ public:
         UINT numFramesInFlight);
 
     void NewFrame();
-    void BuildDockAndWindows(const EditorContext& ctx);
+    void BuildDockAndWindows(EditorContext& ctx);
     void Render(ID3D12GraphicsCommandList* cmd);
     void Shutdown();
 

@@ -63,7 +63,7 @@ void ImGuiLayer::NewFrame()
     ImGui::NewFrame();
 }
 
-void ImGuiLayer::BuildDockAndWindows(const EditorContext& ctx)
+void ImGuiLayer::BuildDockAndWindows(EditorContext& ctx)
 {
     if (!m_initialized) return;
 
@@ -105,12 +105,18 @@ void ImGuiLayer::BuildDockAndWindows(const EditorContext& ctx)
         ImGui::DockBuilderSetNodeSize(dockspace_id, vp->WorkSize);
 
         ImGuiID dock_main = dockspace_id;
-        ImGuiID dock_left, dock_left_bottom;
+
+        ImGuiID dock_left, dock_left_bottom, dock_center, dock_center_bottom;
         ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Left, 0.25f, &dock_left, &dock_main);
         ImGui::DockBuilderSplitNode(dock_left, ImGuiDir_Down, 0.50f, &dock_left_bottom, &dock_left);
+        ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Down, 0.50f, &dock_center_bottom, &dock_center);
+
 
         ImGui::DockBuilderDockWindow("Inspector", dock_left);
         ImGui::DockBuilderDockWindow("Hierarchy", dock_left_bottom);
+        ImGui::DockBuilderDockWindow("Scene",     dock_center);
+        ImGui::DockBuilderDockWindow("Game",      dock_center_bottom);
+
         ImGui::DockBuilderFinish(dockspace_id);
     }
     else if (resized && ctx.pAutoRelayout && *ctx.pAutoRelayout) {
@@ -177,6 +183,8 @@ void ImGuiLayer::BuildDockAndWindows(const EditorContext& ctx)
         // 自前ウィンドウは確実に救済
         clamp_window_into_work("Inspector");
         clamp_window_into_work("Hierarchy");
+        clamp_window_into_work("Scene");
+        clamp_window_into_work("Game");
         clamp_window_into_work("Stats");
 
         // （オプション）全ウィンドウを救済したい場合：
@@ -195,7 +203,34 @@ void ImGuiLayer::BuildDockAndWindows(const EditorContext& ctx)
     ImGui::Text("Size: %u x %u", ctx.rtWidth, ctx.rtHeight);
     ImGui::End();
 
-    if (ctx.pEnableEditor && *ctx.pEnableEditor) {
+    if (ctx.pEnableEditor && *ctx.pEnableEditor) 
+    {
+        // ===== Scene =====
+        if (ImGui::Begin("Scene"))
+        {
+            ImVec2 avail = ImGui::GetContentRegionAvail();
+            ctx.sceneViewportSize = avail;
+            ctx.sceneHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+            ctx.sceneFocused = ImGui::IsWindowFocused();
+
+            // 後で：ImGui::Image(ctx.sceneTexture, avail)
+            ImGui::TextDisabled("Scene View(offscreen not wired yet)");
+        }
+        ImGui::End();
+
+        // ===== Game =====
+        if (ImGui::Begin("Game"))
+        {
+            ImVec2 avail = ImGui::GetContentRegionAvail();
+            ctx.gameViewportSize = avail;
+            ctx.gameHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+            ctx.gameFocused = ImGui::IsWindowFocused();
+
+            // 後で：ImGui::Image(ctx.sceneTexture, avail)
+            ImGui::TextDisabled("Game View(offscreen not wired yet)");
+        }
+        ImGui::End();
+
         ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoCollapse);
         if (ctx.DrawInspector) ctx.DrawInspector();
         ImGui::End();
