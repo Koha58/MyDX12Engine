@@ -132,6 +132,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="EditorInterop.cpp" />
     <ClCompile Include="Editor\ImGuiLayer.cpp" />
     <ClCompile Include="Graphics\D3D12Renderer.cpp" />
     <ClCompile Include="Graphics\D3D12\Core\DeviceResources.cpp" />
@@ -160,11 +161,13 @@
     <ClCompile Include="Runtime\Scene\SceneManager.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="EditorInterop.h" />
     <ClInclude Include="Editor\EditorContext.h" />
     <ClInclude Include="Editor\ImGuiLayer.h" />
     <ClInclude Include="Graphics\D3D12Renderer.h" />
     <ClInclude Include="Graphics\D3D12\Core\DeviceResources.h" />
     <ClInclude Include="Graphics\D3D12\Core\FrameResources.h" />
+    <ClInclude Include="Graphics\D3D12\Debug\DxDebug.h" />
     <ClInclude Include="Graphics\D3D12\Pipeline\PipelineStateBuilder.h" />
     <ClInclude Include="Graphics\D3D12\Upload\MeshUploader.h" />
     <ClInclude Include="Graphics\SceneConstantBuffer.h" />

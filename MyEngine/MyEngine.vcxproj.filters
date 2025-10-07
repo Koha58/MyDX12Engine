@@ -168,6 +168,9 @@
     <ClCompile Include="Editor\ImGuiLayer.cpp">
       <Filter>ソース ファイル\Editor</Filter>
     </ClCompile>
+    <ClCompile Include="EditorInterop.cpp">
+      <Filter>ソース ファイル\Runtime\Core</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Imgui\imconfig.h">
@@ -250,6 +253,12 @@
     </ClInclude>
     <ClInclude Include="Editor\ImGuiLayer.h">
       <Filter>ヘッダー ファイル\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\D3D12\Debug\DxDebug.h">
+      <Filter>ヘッダー ファイル\Graphics\D3D12\Debug</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorInterop.h">
+      <Filter>ヘッダー ファイル\Runtime\Core</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

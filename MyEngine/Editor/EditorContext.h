@@ -5,20 +5,20 @@
 
 struct EditorContext {
     bool* pEnableEditor = nullptr;
-    bool* pRequestResetLayout = nullptr;  // true が来たら Dock を作り直す
-    bool* pAutoRelayout = nullptr;        // ★追加: リサイズ時に比率再構築するか
+    bool* pRequestResetLayout = nullptr;
+    bool* pAutoRelayout = nullptr;
 
-    // ビューポート情報（ImGui側が毎フレーム埋める）
-    ImVec2 sceneViewportSize = ImVec2(0, 0);
-    ImVec2 gameViewportSize = ImVec2(0, 0);
-    bool sceneHovered = false;
-    bool sceneFocused = false;
-    bool gameHovered  = false;
-    bool gameFocused  = false;
+    // Scene
+    ImTextureID sceneTexId = 0;
+    ImVec2      sceneViewportSize = ImVec2(0, 0);
+    bool        sceneHovered = false, sceneFocused = false;
+    unsigned    sceneRTWidth = 0, sceneRTHeight = 0;
 
-    // 将来：オフスクリーンRTの貼り付けに使う
-    ImTextureID sceneTexture{0};
-    ImTextureID gameTexture{0};
+    // Game
+    ImTextureID gameTexId = 0;
+    ImVec2      gameViewportSize = ImVec2(0, 0);
+    bool        gameHovered = false, gameFocused = false;
+    unsigned    gameRTWidth = 0, gameRTHeight = 0;
 
     std::uint32_t rtWidth = 0;
     std::uint32_t rtHeight = 0;
@@ -27,3 +27,4 @@ struct EditorContext {
     std::function<void()> DrawInspector;
     std::function<void()> DrawHierarchy;
 };
+

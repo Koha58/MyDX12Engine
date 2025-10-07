@@ -5,6 +5,8 @@
 #include "CameraControllerComponent.h"
 #include "Scene/GameObject.h"
 #include "Core/Input.h"
+#include "EditorInterop.h"
+
 
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -55,21 +57,37 @@ void CameraControllerComponent::OnDisable() { OutputDebugStringA("CameraControll
 
 //==============================================================================
 // Update（毎フレーム）
-// 1) ImGui がマウスを掴んでいれば何もしない
-// 2) 入力を一括でスナップショット化（ReadInput）
-// 3) モード優先順に処理：パン→オービット→ドリー→ホイール→フライ
-//    ※どれかが動いたらそのフレームは return（モード競合防止）
+//  - 「Scene ウィンドウ上でのみ」操作を開始できるようガードを追加
+//  - いったん開始したドラッグはウィンドウ外に出ても継続（ラッチ）
 //==============================================================================
 void CameraControllerComponent::Update(float deltaTime)
 {
     if (!m_Transform || !m_Camera) return;
 
-    // 1) ImGui がマウスを使用中なら早期 return
     ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureMouse) return;
 
-    // 2) 入力を読む
+    // 1) 入力を読む（WantCaptureMouse 判定より先に）
     const CameraInputState in = ReadInput();
+
+    // 2) カメラ明示操作かどうか（MMB/RMB/Alt+LMB/Alt+RMB/ホイール）
+    const bool sceneIntent =
+        in.mmb || in.rmb ||
+        (in.alt && (in.lmb || in.rmb)) ||
+        (std::fabs(in.wheel) > 0.0f);
+
+    // 3) Scene 上で“新規開始”のみ許可。継続中はウィンドウ外でも許可
+    const bool sceneHoveredNow = EditorInterop::IsSceneHovered();   // ← 共有状態から取得
+    const bool actionActive = m_orbitActive || m_flyPrevRmb;     // 既に操作中？
+
+    if (!sceneHoveredNow && !actionActive) {
+        return; // Scene にいない＆操作も始まっていない
+    }
+
+    // 4) ImGui がマウスを掴んでいても、
+    //    「Scene 上での明示操作」or「継続中」のときは通す
+    if (io.WantCaptureMouse && !((sceneHoveredNow && sceneIntent) || actionActive)) {
+        return;
+    }
 
     // --- Alt+LMB のエッジ検出（オービット開始/終了） -------------------------
     const bool altLmb = (in.alt && in.lmb);
@@ -90,7 +108,7 @@ void CameraControllerComponent::Update(float deltaTime)
         // 実距離に更新
         m_OrbitDist = XMVectorGetX(XMVector3Length(XMVectorSubtract(pivotV, pos)));
 
-        // ★基準角は「いまの Rotation」から読む（LookAt は使わない）
+        // 基準角は現在の回転から
         m_orbitYaw0 = m_pressRot.y;
         m_orbitPitch0 = m_pressRot.x;
 
@@ -100,8 +118,7 @@ void CameraControllerComponent::Update(float deltaTime)
         m_orbitActive = true;
         m_orbitJustStarted = true;
     }
-
-    else if (!altLmb && m_prevAltLmb) // ★離した
+    else if (!altLmb && m_prevAltLmb) // 離した
     {
         m_orbitActive = false;
         m_orbitJustStarted = false;
@@ -111,7 +128,7 @@ void CameraControllerComponent::Update(float deltaTime)
     // --- RMB(フライ) のエッジ検出 -------------------------------------------
     const bool rmbNow = (in.rmb);
 
-    if (rmbNow && !m_flyPrevRmb) // ★押し始め
+    if (rmbNow && !m_flyPrevRmb) // 押し始め
     {
         // 押下時の Transform を保存（押下フレームは復元）
         m_pressPos = m_Transform->Position;
@@ -125,15 +142,15 @@ void CameraControllerComponent::Update(float deltaTime)
         m_flyAccX = 0.0f;
         m_flyAccY = 0.0f;
 
-        m_flyJustStarted = true;  // ★このフレームは見た目を変えない
+        m_flyJustStarted = true;  // このフレームは見た目を変えない
     }
-    else if (!rmbNow && m_flyPrevRmb) // ★離した
+    else if (!rmbNow && m_flyPrevRmb) // 離した
     {
         m_flyJustStarted = false;
     }
     m_flyPrevRmb = rmbNow;
 
-    // ★押した瞬間のフレームは、必ず保存した Transform に復元して終了
+    // 押した瞬間のフレームは、必ず保存した Transform に復元して終了
     if (m_orbitJustStarted || m_flyJustStarted)
     {
         m_Transform->Position = m_pressPos;
@@ -145,13 +162,14 @@ void CameraControllerComponent::Update(float deltaTime)
         return;
     }
 
-    // 3) 優先度順に処理
+    // 5) 優先度順に処理
     if (HandlePan(in))            return; // 中ボタン（MMB）：パン
     if (HandleOrbit(in))          return; // Alt+LMB：オービット
     if (HandleDolly(in))          return; // Alt+RMB：ドリー距離変更
     if (HandleWheel(in))          return; // ホイール：前後ドリー
     if (HandleFly(in, deltaTime)) return; // RMB：フライ（回転＋移動）
 }
+
 
 //==============================================================================
 // ReadInput：Input から 1 フレーム分の入力状態を収集

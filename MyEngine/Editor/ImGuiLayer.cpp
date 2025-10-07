@@ -2,11 +2,15 @@
 #include "ImGuiLayer.h"
 // ▼プロジェクト構成に合わせて相対パスを調整（例は Renderer/ と Editor/ が同階層）
 #include "EditorContext.h"
+#include "EditorInterop.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx12.h"
 #include "imgui_internal.h"
+
+#include <cmath>   // floorf
+#include <cstdio>  // snprintf
 
 bool ImGuiLayer::Initialize(HWND hwnd,
     ID3D12Device* device,
@@ -20,10 +24,15 @@ bool ImGuiLayer::Initialize(HWND hwnd,
     // SRV heap
     D3D12_DESCRIPTOR_HEAP_DESC desc{};
     desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    desc.NumDescriptors = 1;
+    desc.NumDescriptors = 64;
     desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     if (FAILED(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_srvHeap))))
         return false;
+
+    m_device = device; // ★ 後で SRV を作るために保持
+    m_srvIncSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    m_srvCpuStart = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
+    m_srvGpuStart = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
 
     // ImGui core
     IMGUI_CHECKVERSION();
@@ -43,8 +52,8 @@ bool ImGuiLayer::Initialize(HWND hwnd,
     ii.RTVFormat = rtvFormat;
     ii.DSVFormat = DXGI_FORMAT_D32_FLOAT;
     ii.SrvDescriptorHeap = m_srvHeap.Get();
-    ii.LegacySingleSrvCpuDescriptor = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
-    ii.LegacySingleSrvGpuDescriptor = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
+    ii.LegacySingleSrvCpuDescriptor = m_srvCpuStart;
+    ii.LegacySingleSrvGpuDescriptor = m_srvGpuStart;
 
     ImGui_ImplDX12_Init(&ii);
 
@@ -111,11 +120,10 @@ void ImGuiLayer::BuildDockAndWindows(EditorContext& ctx)
         ImGui::DockBuilderSplitNode(dock_left, ImGuiDir_Down, 0.50f, &dock_left_bottom, &dock_left);
         ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Down, 0.50f, &dock_center_bottom, &dock_center);
 
-
         ImGui::DockBuilderDockWindow("Inspector", dock_left);
         ImGui::DockBuilderDockWindow("Hierarchy", dock_left_bottom);
-        ImGui::DockBuilderDockWindow("Scene",     dock_center);
-        ImGui::DockBuilderDockWindow("Game",      dock_center_bottom);
+        ImGui::DockBuilderDockWindow("Scene", dock_center);
+        ImGui::DockBuilderDockWindow("Game", dock_center_bottom);
 
         ImGui::DockBuilderFinish(dockspace_id);
     }
@@ -124,9 +132,8 @@ void ImGuiLayer::BuildDockAndWindows(EditorContext& ctx)
             ImGui::DockBuilderSetNodeSize(dockspace_id, vp->WorkSize);
     }
 
-    // ===== ここから “未ドック窓の救済” を追加 =====
+    // ===== ここから “未ドック窓の救済” =====
     if (resized) {
-        const float margin = 24.0f; // 端からの安全マージン（タイトルバー分など）
         ImRect work(vp->WorkPos, vp->WorkPos + vp->WorkSize);
 
         auto clamp_window_into_work = [&](const char* name)
@@ -139,7 +146,7 @@ void ImGuiLayer::BuildDockAndWindows(EditorContext& ctx)
                 const ImVec2 min_size(160.0f, 120.0f);
                 ImRect work(vp->WorkPos, vp->WorkPos + vp->WorkSize);
 
-                // AutoResize の場合は「想定サイズ」を使う（サイズはいじらない）
+                // AutoResize の場合は「想定サイズ」
                 const bool auto_resize = (w->Flags & ImGuiWindowFlags_AlwaysAutoResize) != 0;
                 ImVec2 size = auto_resize ? ImGui::CalcWindowNextAutoFitSize(w) : w->SizeFull;
 
@@ -173,28 +180,15 @@ void ImGuiLayer::BuildDockAndWindows(EditorContext& ctx)
                 pos.x = ImClamp(pos.x, min_pos.x, max_pos.x);
                 pos.y = ImClamp(pos.y, min_pos.y, max_pos.y);
 
-                // AutoResize 窓はサイズを触らず、位置のみ反映
                 if (!auto_resize) ImGui::SetWindowSize(w, size, ImGuiCond_Always);
                 ImGui::SetWindowPos(w, pos, ImGuiCond_Always);
             };
 
-
-
-        // 自前ウィンドウは確実に救済
         clamp_window_into_work("Inspector");
         clamp_window_into_work("Hierarchy");
         clamp_window_into_work("Scene");
         clamp_window_into_work("Game");
         clamp_window_into_work("Stats");
-
-        // （オプション）全ウィンドウを救済したい場合：
-        // if (ctx.pAutoRecoverAll && *ctx.pAutoRecoverAll) {
-        //     ImGuiContext* g = ImGui::GetCurrentContext();
-        //     for (ImGuiWindow* w : g->Windows) {
-        //         if (!w->DockIsActive && (w->Flags & ImGuiWindowFlags_ChildWindow) == 0)
-        //             clamp_window_into_work(w->Name);
-        //     }
-        // }
     }
 
     // ===== UI =====
@@ -203,33 +197,163 @@ void ImGuiLayer::BuildDockAndWindows(EditorContext& ctx)
     ImGui::Text("Size: %u x %u", ctx.rtWidth, ctx.rtHeight);
     ImGui::End();
 
-    if (ctx.pEnableEditor && *ctx.pEnableEditor) 
+    // Scene フラグ初期化
+    EditorInterop::SetSceneHovered(false);
+    EditorInterop::SetSceneFocused(false);
+
+    if (ctx.pEnableEditor && *ctx.pEnableEditor)
     {
         // ===== Scene =====
-        if (ImGui::Begin("Scene"))
         {
-            ImVec2 avail = ImGui::GetContentRegionAvail();
-            ctx.sceneViewportSize = avail;
-            ctx.sceneHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-            ctx.sceneFocused = ImGui::IsWindowFocused();
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+            const ImGuiWindowFlags sceneFlags =
+                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 
-            // 後で：ImGui::Image(ctx.sceneTexture, avail)
-            ImGui::TextDisabled("Scene View(offscreen not wired yet)");
+            if (ImGui::Begin("Scene", nullptr, sceneFlags))
+            {
+                ImVec2 avail = ImGui::GetContentRegionAvail();
+                avail.x = floorf(avail.x);
+                avail.y = floorf(avail.y);
+
+                // 入力キャッチャ（ドラッグをこのアイテムが専有）
+                ImVec2 p0 = ImGui::GetCursorScreenPos();
+                ImVec2 p1 = ImVec2(p0.x + avail.x, p0.y + avail.y);
+                ImGui::InvisibleButton("##SceneInputCatcher", avail,
+                    ImGuiButtonFlags_MouseButtonLeft |
+                    ImGuiButtonFlags_MouseButtonRight |
+                    ImGuiButtonFlags_MouseButtonMiddle);
+
+                // Hover / Focus
+                ctx.sceneViewportSize = avail;
+                ctx.sceneHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+                ctx.sceneFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+                EditorInterop::SetSceneHovered(ctx.sceneHovered);
+                EditorInterop::SetSceneFocused(ctx.sceneFocused);
+
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+
+                if (ctx.sceneTexId && ctx.sceneRTWidth > 0 && ctx.sceneRTHeight > 0)
+                {
+                    // 背景を塗る（レターボックス/ピラーボックス用）
+                    dl->AddRectFilled(p0, p1, IM_COL32(40, 40, 40, 255));
+
+                    // === Fit（アスペクト維持で全体が見える）＋中央配置 ===
+                    const float texAspect = (float)ctx.sceneRTWidth / (float)ctx.sceneRTHeight;
+                    float w = avail.x, h = avail.y;
+                    if (w / h > texAspect) { w = h * texAspect; }
+                    else { h = w / texAspect; }
+
+                    ImVec2 size(w, h);
+                    ImVec2 center = ImVec2((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f);
+                    ImVec2 q0 = ImVec2(center.x - size.x * 0.5f, center.y - size.y * 0.5f);
+                    ImVec2 q1 = ImVec2(center.x + size.x * 0.5f, center.y + size.y * 0.5f);
+
+                    // テクスチャは全面 UV（0..1）のまま
+                    dl->AddImage(ctx.sceneTexId, q0, q1, ImVec2(0, 0), ImVec2(1, 1));
+
+                    // （デバッグ）右下に解像度表示したい場合
+                    // char txt[64];
+                    // snprintf(txt, sizeof(txt), "%ux%u (fit)", ctx.sceneRTWidth, ctx.sceneRTHeight);
+                    // ImVec2 ts = ImGui::CalcTextSize(txt);
+                    // ImVec2 pad(6,4);
+                    // ImVec2 r0 = ImVec2(p1.x - ts.x - 2*pad.x, p1.y - ts.y - 2*pad.y);
+                    // dl->AddRectFilled(r0, p1, IM_COL32(0,0,0,130), 6.f);
+                    // dl->AddText(ImVec2(r0.x+pad.x, r0.y+pad.y), IM_COL32_WHITE, txt);
+                }
+                else
+                {
+                    dl->AddRectFilled(p0, p1, IM_COL32(40, 40, 40, 255));
+                    ImGui::SetCursorScreenPos(ImVec2(p0.x + 6, p0.y + 6));
+                    ImGui::TextDisabled("Scene View (no SRV set)");
+                }
+            }
+            ImGui::End();
+            ImGui::PopStyleVar();
         }
-        ImGui::End();
+
 
         // ===== Game =====
-        if (ImGui::Begin("Game"))
         {
-            ImVec2 avail = ImGui::GetContentRegionAvail();
-            ctx.gameViewportSize = avail;
-            ctx.gameHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-            ctx.gameFocused = ImGui::IsWindowFocused();
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+            const ImGuiWindowFlags gameFlags =
+                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 
-            // 後で：ImGui::Image(ctx.sceneTexture, avail)
-            ImGui::TextDisabled("Game View(offscreen not wired yet)");
+            if (ImGui::Begin("Game", nullptr, gameFlags))
+            {
+                ImVec2 avail = ImGui::GetContentRegionAvail();
+                avail.x = floorf(avail.x);
+                avail.y = floorf(avail.y);
+
+                // 入力キャッチャ（ウィンドウ操作に奪われないように）
+                ImVec2 p0 = ImGui::GetCursorScreenPos();
+                ImVec2 p1 = ImVec2(p0.x + avail.x, p0.y + avail.y);
+                ImGui::InvisibleButton("##GameInputCatcher", avail,
+                    ImGuiButtonFlags_MouseButtonLeft |
+                    ImGuiButtonFlags_MouseButtonRight |
+                    ImGuiButtonFlags_MouseButtonMiddle);
+
+                ctx.gameViewportSize = avail;
+                ctx.gameHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+                ctx.gameFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                // 背景（レタボ・ピラボを見せる）
+                dl->AddRectFilled(p0, p1, IM_COL32(30, 30, 30, 255));
+
+                // ====== ズーム ======
+                static float s_gameScale = 1.0f;        // 現在のズーム
+                static const float s_minScale = 1.0f;   // 初期“Fit”が下限（これ未満に縮めない）
+                static const float s_maxScale = 4.0f;   // 上限
+
+                if (ctx.gameHovered) {
+                    ImGuiIO& io = ImGui::GetIO();
+                    float wheel = io.MouseWheel;
+                    if (wheel != 0.0f) {
+                        s_gameScale *= (wheel > 0 ? 1.1f : 1.0f / 1.1f);
+                    }
+                    // Ctrl+0 で 100%（Fit）に戻す
+                    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_0)) {
+                        s_gameScale = 1.0f;
+                    }
+                }
+                s_gameScale = ImClamp(s_gameScale, s_minScale, s_maxScale);
+
+                if (ctx.gameTexId && ctx.gameRTWidth > 0 && ctx.gameRTHeight > 0)
+                {
+                    // === Fit（アスペクト維持・全体表示）＋中央配置 ===
+                    const float texAspect = (float)ctx.gameRTWidth / (float)ctx.gameRTHeight;
+                    float w = avail.x, h = avail.y;
+                    if (w / h > texAspect) { w = h * texAspect; }
+                    else { h = w / texAspect; }
+
+                    w *= s_gameScale;
+                    h *= s_gameScale;
+
+                    ImVec2 size(w, h);
+                    ImVec2 center = ImVec2((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f);
+                    ImVec2 q0 = ImVec2(center.x - size.x * 0.5f, center.y - size.y * 0.5f);
+                    ImVec2 q1 = ImVec2(center.x + size.x * 0.5f, center.y + size.y * 0.5f);
+
+                    // テクスチャは全面UV（0..1）のまま
+                    dl->AddImage(ctx.gameTexId, q0, q1, ImVec2(0, 0), ImVec2(1, 1));
+
+                    // 右下にScale表示
+                    char buf[32];
+                    std::snprintf(buf, sizeof(buf), "Scale: %.0f%%", s_gameScale * 100.f);
+                    ImVec2 ts = ImGui::CalcTextSize(buf);
+                    ImVec2 pad(6, 4);
+                    ImVec2 r0 = ImVec2(p1.x - ts.x - pad.x * 2, p1.y - ts.y - pad.y * 2);
+                    dl->AddRectFilled(r0, p1, IM_COL32(0, 0, 0, 130), 6.0f);
+                    dl->AddText(ImVec2(r0.x + pad.x, r0.y + pad.y), IM_COL32_WHITE, buf);
+                }
+                else {
+                    ImGui::SetCursorScreenPos(ImVec2(p0.x + 6, p0.y + 6));
+                    ImGui::TextDisabled("Game View (no SRV set)");
+                }
+            }
+            ImGui::End();
+            ImGui::PopStyleVar();
         }
-        ImGui::End();
 
         ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoCollapse);
         if (ctx.DrawInspector) ctx.DrawInspector();
@@ -241,7 +365,23 @@ void ImGuiLayer::BuildDockAndWindows(EditorContext& ctx)
     }
 }
 
+ImTextureID ImGuiLayer::CreateOrUpdateTextureSRV(ID3D12Resource* tex, DXGI_FORMAT fmt, UINT slot)
+{
+    // slot=0 はフォント用に予約済み。1 以降を使う。
+    D3D12_CPU_DESCRIPTOR_HANDLE cpu = m_srvCpuStart;
+    D3D12_GPU_DESCRIPTOR_HANDLE gpu = m_srvGpuStart;
+    cpu.ptr += SIZE_T(m_srvIncSize) * slot;
+    gpu.ptr += SIZE_T(m_srvIncSize) * slot;
 
+    D3D12_SHADER_RESOURCE_VIEW_DESC sd{};
+    sd.Format = fmt;
+    sd.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    sd.Texture2D.MipLevels = 1;
+
+    m_device->CreateShaderResourceView(tex, &sd, cpu);
+    return (ImTextureID)gpu.ptr; // DX12: ImTextureID は GPU SRV ハンドル
+}
 
 void ImGuiLayer::Render(ID3D12GraphicsCommandList* cmd)
 {
