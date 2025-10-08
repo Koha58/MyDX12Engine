@@ -171,6 +171,9 @@
     <ClCompile Include="EditorInterop.cpp">
       <Filter>ソース ファイル\Runtime\Core</Filter>
     </ClCompile>
+    <ClCompile Include="RenderTarget.cpp">
+      <Filter>ソース ファイル\Graphics\D3D12\Core</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Imgui\imconfig.h">
@@ -259,6 +262,9 @@
     </ClInclude>
     <ClInclude Include="EditorInterop.h">
       <Filter>ヘッダー ファイル\Runtime\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="RendererTarget.h">
+      <Filter>ヘッダー ファイル\Graphics\D3D12\Core</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

@@ -148,6 +148,7 @@
     <ClCompile Include="Imgui\imgui_tables.cpp" />
     <ClCompile Include="Imgui\imgui_widgets.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="RenderTarget.cpp" />
     <ClCompile Include="Runtime\Assets\Mesh.cpp" />
     <ClCompile Include="Runtime\Components\CameraComponent.cpp" />
     <ClCompile Include="Runtime\Components\CameraControllerComponent.cpp" />
@@ -179,6 +180,7 @@
     <ClInclude Include="Imgui\imstb_rectpack.h" />
     <ClInclude Include="Imgui\imstb_textedit.h" />
     <ClInclude Include="Imgui\imstb_truetype.h" />
+    <ClInclude Include="RendererTarget.h" />
     <ClInclude Include="Runtime\Assets\Mesh.h" />
     <ClInclude Include="Runtime\Components\CameraComponent.h" />
     <ClInclude Include="Runtime\Components\CameraControllerComponent.h" />

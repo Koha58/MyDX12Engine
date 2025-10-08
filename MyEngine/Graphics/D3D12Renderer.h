@@ -22,6 +22,7 @@
 #include "Pipeline/PipelineStateBuilder.h"  // PipelineSet 定義
 #include "Editor/EditorContext.h"           // エディタ UI 受け渡し
 #include "Editor/ImGuiLayer.h"              // ImGui 初期化/描画
+//#include "Core/RenderTarget.h"
 
 class MeshRendererComponent;
 
