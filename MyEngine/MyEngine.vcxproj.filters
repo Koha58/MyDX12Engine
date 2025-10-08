@@ -168,10 +168,13 @@
     <ClCompile Include="Editor\ImGuiLayer.cpp">
       <Filter>ソース ファイル\Editor</Filter>
     </ClCompile>
-    <ClCompile Include="EditorInterop.cpp">
+    <ClCompile Include="Runtime\Core\EditorInterop.cpp">
       <Filter>ソース ファイル\Runtime\Core</Filter>
     </ClCompile>
-    <ClCompile Include="RenderTarget.cpp">
+    <ClCompile Include="Graphics\D3D12\Core\RenderTarget.cpp">
+      <Filter>ソース ファイル\Graphics\D3D12\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\D3D12\Core\GpuGarbage.cpp">
       <Filter>ソース ファイル\Graphics\D3D12\Core</Filter>
     </ClCompile>
   </ItemGroup>
@@ -260,10 +263,13 @@
     <ClInclude Include="Graphics\D3D12\Debug\DxDebug.h">
       <Filter>ヘッダー ファイル\Graphics\D3D12\Debug</Filter>
     </ClInclude>
-    <ClInclude Include="EditorInterop.h">
+    <ClInclude Include="Runtime\Core\EditorInterop.h">
       <Filter>ヘッダー ファイル\Runtime\Core</Filter>
     </ClInclude>
-    <ClInclude Include="RendererTarget.h">
+    <ClInclude Include="Graphics\D3D12\Core\RenderTarget.h">
+      <Filter>ヘッダー ファイル\Graphics\D3D12\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\D3D12\Core\GpuGarbage.h">
       <Filter>ヘッダー ファイル\Graphics\D3D12\Core</Filter>
     </ClInclude>
   </ItemGroup>

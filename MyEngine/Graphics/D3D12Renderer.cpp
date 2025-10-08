@@ -1,10 +1,12 @@
-﻿#include "D3D12Renderer.h"
+﻿// D3D12Renderer.cpp
+#include "D3D12Renderer.h"
 #include "d3dx12.h"
 
 #include <stdexcept>
 #include <functional>
 #include <cmath>
 #include <cstring>
+#include <string> // DrawVec3Row で使用
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -70,6 +72,9 @@ namespace {
     }
 }
 
+//------------------------------------------------------------------------------
+// 小物
+//------------------------------------------------------------------------------
 const char* D3D12Renderer::GONameUTF8(const GameObject* go)
 {
     return go ? go->Name.c_str() : "(null)";
@@ -112,14 +117,14 @@ D3D12Renderer::~D3D12Renderer() { Cleanup(); }
 //==============================================================================
 bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
 {
-    // Device/SwapChain/RT/DS をラッパ経由で作成
+    // Device/SwapChain
     m_dev = std::make_unique<DeviceResources>();
     if (!m_dev->Initialize(hwnd, width, height, FrameCount))
         return false;
 
     ID3D12Device* dev = m_dev->GetDevice();
 
-    // FrameResources：Upload CB（MaxObjects×FrameCount）
+    // FrameResources：Upload CB（MaxObjects×2 スロット * FrameCount）
     if (!m_frames.Initialize(dev, FrameCount, sizeof(SceneConstantBuffer), MaxObjects * 2))
         return false;
 
@@ -147,14 +152,32 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
         m_dev->GetRTVFormat(), m_dev->GetDSVFormat(), FrameCount))
         return false;
 
-    // オフスクリーンを作る（Scene / Game）
-    m_offscreenFmt = DXGI_FORMAT_R8G8B8A8_UNORM; // 必要なら *_SRGB
-    CreateOffscreen(width, height);
-    CreateGameOffscreen(width, height);
+    // オフスクリーン（RenderTarget）作成
+    {
+        RenderTargetDesc s{};
+        s.width = width;
+        s.height = height;
+        s.colorFormat = DXGI_FORMAT_R8G8B8A8_UNORM; // 必要なら SRGBへ
+        s.depthFormat = DXGI_FORMAT_D32_FLOAT;
+        s.clearColor[0] = 0.10f; s.clearColor[1] = 0.10f; s.clearColor[2] = 0.10f; s.clearColor[3] = 1.0f;
+        s.clearDepth = 1.0f;
+        m_sceneRT.Create(dev, s);
+        m_sceneRT.EnsureImGuiSRV(m_imgui.get(), kSceneSrvSlot);
+    }
+    {
+        RenderTargetDesc g{};
+        g.width = width;
+        g.height = height;
+        g.colorFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+        g.depthFormat = DXGI_FORMAT_D32_FLOAT;
+        g.clearColor[0] = 0.12f; g.clearColor[1] = 0.12f; g.clearColor[2] = 0.12f; g.clearColor[3] = 1.0f;
+        g.clearDepth = 1.0f;
+        m_gameRT.Create(dev, g);
+        m_gameRT.EnsureImGuiSRV(m_imgui.get(), kGameSrvSlot);
+    }
 
     ImGui::GetIO().IniFilename = "EditorLayout.ini";
 
-    // 初期アスペクト（Scene カメラ用）
     if (m_Camera)
         m_Camera->SetAspect(static_cast<float>(width) / static_cast<float>(height));
 
@@ -175,66 +198,62 @@ void D3D12Renderer::Render()
         WaitForSingleObject(m_fenceEvent, INFINITE);
     }
 
-    // ---- SceneRT の保留リサイズを適用（フレーム境界で安全に差し替え） ----
-    if (m_pendingSceneRTW && (m_pendingSceneRTW != m_sceneRTW || m_pendingSceneRTH != m_sceneRTH)) {
-        ReleaseOffscreen();
-        CreateOffscreen(m_pendingSceneRTW, m_pendingSceneRTH);
+    // ---- SceneRT の保留リサイズ（遅延破棄版：このフレームの Signal 後に捨てる） ----
+    RenderTargetHandles deadScene{}; // このフレーム末にキューへ積む
+    if (m_pendingSceneRTW && (m_pendingSceneRTW != m_sceneRT.Width() || m_pendingSceneRTH != m_sceneRT.Height())) {
+        // 旧RTをデタッチ（ComPtr群を抜き取るだけでGPU待ちはしない）
+        deadScene = m_sceneRT.Detach();
+
+        // 新規作成
+        RenderTargetDesc s{};
+        s.width = m_pendingSceneRTW;  s.height = m_pendingSceneRTH;
+        s.colorFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+        s.depthFormat = DXGI_FORMAT_D32_FLOAT;
+        s.clearColor[0] = 0.10f; s.clearColor[1] = 0.10f; s.clearColor[2] = 0.10f; s.clearColor[3] = 1.0f;
+        s.clearDepth = 1.0f;
+
+        m_sceneRT.Create(m_dev->GetDevice(), s);
+        m_sceneRT.EnsureImGuiSRV(m_imgui.get(), kSceneSrvSlot);
+
         m_pendingSceneRTW = m_pendingSceneRTH = 0;
     }
 
-    // ★Sceneカメラのアスペクトは常に最新のRTに合わせる（潰れ防止）
-    if (m_Camera && m_sceneRTW > 0 && m_sceneRTH > 0) {
-        m_Camera->SetAspect((float)m_sceneRTW / (float)m_sceneRTH);
-        // 必要なら投影行列の再計算を明示
-        // m_Camera->RebuildProjection();
+    // ★ Sceneカメラのアスペクトは常に最新のRTに合わせる
+    if (m_Camera && m_sceneRT.Width() > 0 && m_sceneRT.Height() > 0) {
+        m_Camera->SetAspect((float)m_sceneRT.Width() / (float)m_sceneRT.Height());
     }
 
     // ---- Reset ----
     fr.cmdAlloc->Reset();
     m_cmd->Reset(fr.cmdAlloc.Get(), m_pipe.pso.Get());
 
-    // ★ 凍結（初回だけ）：Scene カメラの view/proj と、その時点のアスペクトを保存
+    // ★ 初回だけ：Scene カメラの view/proj とアスペクトを保存し、Game用に固定
     if (!m_gameCamFrozen && m_Camera) {
         using namespace DirectX;
         XMStoreFloat4x4(&m_gameViewInit, m_Camera->GetViewMatrix());
         XMStoreFloat4x4(&m_gameProjInit, m_Camera->GetProjectionMatrix());
-        m_gameFrozenAspect = (float)m_sceneRTW / (float)m_sceneRTH; // ← 新規メンバ
+        m_gameFrozenAspect = (float)m_sceneRT.Width() / (float)m_sceneRT.Height();
         m_gameCamFrozen = true;
     }
-
-    // Sceneパスで使ったCBスロット数（メモ用）
-    UINT sceneCBCount = 0;
 
     // =====================================================================
     // ① Scene 用オフスクリーンへ描画（CB: [0 .. MaxObjects-1]）
     // =====================================================================
-    if (m_sceneColor)
+    if (m_sceneRT.Color())
     {
-        // SRV -> RTV
-        if (m_sceneState != D3D12_RESOURCE_STATE_RENDER_TARGET) {
-            auto b = CD3DX12_RESOURCE_BARRIER::Transition(
-                m_sceneColor.Get(), m_sceneState, D3D12_RESOURCE_STATE_RENDER_TARGET);
-            m_cmd->ResourceBarrier(1, &b);
-            m_sceneState = D3D12_RESOURCE_STATE_RENDER_TARGET;
-        }
+        m_sceneRT.TransitionToRT(m_cmd.Get());
+        m_sceneRT.Bind(m_cmd.Get());
+        m_sceneRT.Clear(m_cmd.Get());
 
-        // RTV/DSV
-        m_cmd->OMSetRenderTargets(1, &m_sceneRTV, FALSE, &m_sceneDSV);
-
-        // VP/Scissor はRTの実寸
-        D3D12_VIEWPORT vp{ 0.f, 0.f, (float)m_sceneRTW, (float)m_sceneRTH, 0.f, 1.f };
-        D3D12_RECT     sc{ 0, 0, (LONG)m_sceneRTW, (LONG)m_sceneRTH };
+        const float w = (float)m_sceneRT.Width();
+        const float h = (float)m_sceneRT.Height();
+        D3D12_VIEWPORT vp{ 0.f, 0.f, w, h, 0.f, 1.f };
+        D3D12_RECT     sc{ 0, 0, (LONG)m_sceneRT.Width(), (LONG)m_sceneRT.Height() };
         m_cmd->RSSetViewports(1, &vp);
         m_cmd->RSSetScissorRects(1, &sc);
         m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         m_cmd->SetGraphicsRootSignature(m_pipe.root.Get());
 
-        // クリア
-        const float clearScene[4] = { 0.1f, 0.1f, 0.1f, 1.0f };
-        m_cmd->ClearDepthStencilView(m_sceneDSV, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-        m_cmd->ClearRenderTargetView(m_sceneRTV, clearScene, 0, nullptr);
-
-        // 描画
         if (m_CurrentScene && m_Camera)
         {
             using namespace DirectX;
@@ -255,6 +274,7 @@ void D3D12Renderer::Render()
                     auto mr = go->GetComponent<MeshRendererComponent>();
                     if (mr && mr->VertexBuffer && mr->IndexBuffer && mr->IndexCount > 0)
                     {
+                        using namespace DirectX;
                         XMMATRIX world = go->Transform->GetWorldMatrix();
                         XMMATRIX mvp = world * viewMatrix * projMatrix;
 
@@ -284,41 +304,22 @@ void D3D12Renderer::Render()
                 };
 
             for (auto& root : m_CurrentScene->GetRootGameObjects()) draw(root);
-            sceneCBCount = slot; // 使った数を記録（今回はGameと領域分離なので参照しない）
         }
 
-        // RTV -> SRV
-        if (m_sceneState != D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) {
-            auto b = CD3DX12_RESOURCE_BARRIER::Transition(
-                m_sceneColor.Get(),
-                D3D12_RESOURCE_STATE_RENDER_TARGET,
-                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-            m_cmd->ResourceBarrier(1, &b);
-            m_sceneState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-        }
+        m_sceneRT.TransitionToSRV(m_cmd.Get());
     }
 
     // =====================================================================
     // 1.5) Game 用オフスクリーンへ “固定カメラ” で描画（CB: [MaxObjects .. 2*MaxObjects-1]）
     // =====================================================================
-    if (m_gameColor && m_gameCamFrozen)
+    if (m_gameRT.Color() && m_gameCamFrozen)
     {
-        // SRV -> RTV
-        if (m_gameState != D3D12_RESOURCE_STATE_RENDER_TARGET) {
-            auto b = CD3DX12_RESOURCE_BARRIER::Transition(
-                m_gameColor.Get(), m_gameState, D3D12_RESOURCE_STATE_RENDER_TARGET);
-            m_cmd->ResourceBarrier(1, &b);
-            m_gameState = D3D12_RESOURCE_STATE_RENDER_TARGET;
-        }
+        m_gameRT.TransitionToRT(m_cmd.Get());
+        m_gameRT.Bind(m_cmd.Get());
+        m_gameRT.Clear(m_cmd.Get());
 
-        m_cmd->OMSetRenderTargets(1, &m_gameRTV, FALSE, &m_gameDSV);
-
-        const float clearGame[4] = { 0.12f, 0.12f, 0.12f, 1.0f };
-        m_cmd->ClearRenderTargetView(m_gameRTV, clearGame, 0, nullptr);
-        m_cmd->ClearDepthStencilView(m_gameDSV, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-
-        D3D12_VIEWPORT vpG{ 0.f, 0.f, (float)m_gameRTW, (float)m_gameRTH, 0.f, 1.f };
-        D3D12_RECT     scG{ 0, 0, (LONG)m_gameRTW, (LONG)m_gameRTH };
+        D3D12_VIEWPORT vpG{ 0.f, 0.f, (float)m_gameRT.Width(), (float)m_gameRT.Height(), 0.f, 1.f };
+        D3D12_RECT     scG{ 0, 0, (LONG)m_gameRT.Width(), (LONG)m_gameRT.Height() };
         m_cmd->RSSetViewports(1, &vpG);
         m_cmd->RSSetScissorRects(1, &scG);
         m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -328,7 +329,7 @@ void D3D12Renderer::Render()
         XMMATRIX viewMatrix = XMLoadFloat4x4(&m_gameViewInit);
         XMMATRIX projMatrix = XMLoadFloat4x4(&m_gameProjInit);
 
-        const UINT baseGame = MaxObjects; // 後半を常用
+        const UINT baseGame = MaxObjects; // 後半
         UINT slot = 0;
 
         UINT8* cbCPU = fr.cpu;
@@ -374,13 +375,7 @@ void D3D12Renderer::Render()
             for (auto& root : m_CurrentScene->GetRootGameObjects()) drawGame(root);
         }
 
-        // RTV -> SRV
-        auto toSRVg = CD3DX12_RESOURCE_BARRIER::Transition(
-            m_gameColor.Get(),
-            D3D12_RESOURCE_STATE_RENDER_TARGET,
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-        m_cmd->ResourceBarrier(1, &toSRVg);
-        m_gameState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        m_gameRT.TransitionToSRV(m_cmd.Get());
     }
 
     // =====================================================================
@@ -414,14 +409,14 @@ void D3D12Renderer::Render()
         ctx.pRequestResetLayout = &s_resetLayout;
         ctx.pAutoRelayout = &s_autoRelayout;
 
-        // SRV と実サイズ
-        ctx.sceneTexId = m_sceneTexId;
-        ctx.sceneRTWidth = m_sceneRTW;
-        ctx.sceneRTHeight = m_sceneRTH;
+        // RenderTarget から毎フレーム SRV を保証
+        ctx.sceneTexId = m_sceneRT.EnsureImGuiSRV(m_imgui.get(), kSceneSrvSlot);
+        ctx.sceneRTWidth = m_sceneRT.Width();
+        ctx.sceneRTHeight = m_sceneRT.Height();
 
-        ctx.gameTexId = m_gameTexId;
-        ctx.gameRTWidth = m_gameRTW;
-        ctx.gameRTHeight = m_gameRTH;
+        ctx.gameTexId = m_gameRT.EnsureImGuiSRV(m_imgui.get(), kGameSrvSlot);
+        ctx.gameRTWidth = m_gameRT.Width();
+        ctx.gameRTHeight = m_gameRT.Height();
 
         ctx.DrawInspector = [&]()
             {
@@ -462,7 +457,7 @@ void D3D12Renderer::Render()
         if (ctx.sceneTexId) {
             UINT wantW = (UINT)ImMax(1.0f, ctx.sceneViewportSize.x);
             UINT wantH = (UINT)ImMax(1.0f, ctx.sceneViewportSize.y);
-            if (wantW != m_sceneRTW || wantH != m_sceneRTH) {
+            if (wantW != m_sceneRT.Width() || wantH != m_sceneRT.Height()) {
                 RequestSceneRTResize(wantW, wantH);
             }
         }
@@ -483,9 +478,16 @@ void D3D12Renderer::Render()
     m_dev->GetQueue()->Signal(m_fence.Get(), sig);
     fr.fenceValue = sig;
 
+    // ★ このフレームが完了したら旧RTを捨てる
+    if (deadScene.color || deadScene.depth || deadScene.rtvHeap || deadScene.dsvHeap) {
+        EnqueueRenderTarget(m_garbage, sig, std::move(deadScene));
+    }
+
+    // ★ 遅延破棄の回収（完了分を捨てる）
+    m_garbage.Collect(m_fence.Get());
+
     ++m_frameCount;
 }
-
 
 //==============================================================================
 // Resize
@@ -494,7 +496,7 @@ void D3D12Renderer::Resize(UINT width, UINT height) noexcept
 {
     if (width == 0 || height == 0) return;
 
-    // 全フレーム待機
+    // 全フレーム待機（スワップチェイン再作成のため）
     for (UINT i = 0; i < m_frames.GetCount(); ++i) {
         auto& fr = m_frames.Get(i);
         if (fr.fenceValue != 0 && m_fence->GetCompletedValue() < fr.fenceValue) {
@@ -505,14 +507,8 @@ void D3D12Renderer::Resize(UINT width, UINT height) noexcept
 
     m_dev->Resize(width, height);
 
-    // Scene オフスクリーン作り直し（スワップチェインサイズ基準でもOK。最終的にはUIで再要求）
-    ReleaseOffscreen();
-    CreateOffscreen(width, height);
-
-    // Game は「固定解像度」運用にしたければ、ここでは作り直さない。
-    // 必要なら下記を有効化：
-    // ReleaseGameOffscreen();
-    // CreateGameOffscreen(width, height);
+    // ここでは即作り直さず、次フレームの保留リサイズで安全に差し替える
+    RequestSceneRTResize(width, height);
 
     if (m_Camera)
         m_Camera->SetAspect(static_cast<float>(width) / static_cast<float>(height));
@@ -537,8 +533,14 @@ void D3D12Renderer::Cleanup()
     if (m_imgui) { m_imgui->Shutdown(); m_imgui.reset(); }
 
     ReleaseSceneResources();
-    ReleaseOffscreen();
-    ReleaseGameOffscreen();
+
+    // 念のため完全待機してから遅延破棄を全回収
+    WaitForGPU();
+    m_garbage.FlushAll();
+
+    m_sceneRT.Release();
+    m_gameRT.Release();
+
     m_frames.Destroy();
 
     if (m_fenceEvent) { CloseHandle(m_fenceEvent); m_fenceEvent = nullptr; }
@@ -637,158 +639,4 @@ void D3D12Renderer::ReleaseSceneResources()
     }
     m_Camera.reset();
     m_CurrentScene.reset();
-}
-
-//==============================================================================
-// Offscreen (Scene) 作成/破棄
-//==============================================================================
-void D3D12Renderer::CreateOffscreen(UINT w, UINT h)
-{
-    ID3D12Device* dev = m_dev->GetDevice();
-
-    // RTV ヒープ
-    D3D12_DESCRIPTOR_HEAP_DESC rdesc{};
-    rdesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-    rdesc.NumDescriptors = 1;
-    rdesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-    dev->CreateDescriptorHeap(&rdesc, IID_PPV_ARGS(&m_offscreenRTVHeap));
-    m_sceneRTV = m_offscreenRTVHeap->GetCPUDescriptorHandleForHeapStart();
-
-    // Color
-    D3D12_RESOURCE_DESC rd{};
-    rd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    rd.Width = w; rd.Height = h;
-    rd.DepthOrArraySize = 1; rd.MipLevels = 1;
-    rd.Format = m_offscreenFmt;
-    rd.SampleDesc = { 1,0 };
-    rd.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-    rd.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
-
-    D3D12_CLEAR_VALUE ccv{};
-    ccv.Format = m_offscreenFmt;
-    ccv.Color[0] = 0.1f; ccv.Color[1] = 0.1f; ccv.Color[2] = 0.1f; ccv.Color[3] = 1.0f;
-
-    CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
-    dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
-        D3D12_RESOURCE_STATE_RENDER_TARGET, &ccv, IID_PPV_ARGS(&m_sceneColor));
-    dev->CreateRenderTargetView(m_sceneColor.Get(), nullptr, m_sceneRTV);
-
-    // DSV ヒープ
-    D3D12_DESCRIPTOR_HEAP_DESC ddesc{};
-    ddesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-    ddesc.NumDescriptors = 1;
-    ddesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-    dev->CreateDescriptorHeap(&ddesc, IID_PPV_ARGS(&m_offscreenDSVHeap));
-    m_sceneDSV = m_offscreenDSVHeap->GetCPUDescriptorHandleForHeapStart();
-
-    // Depth（サイズ一致）
-    D3D12_RESOURCE_DESC dd = rd;
-    dd.Format = DXGI_FORMAT_D32_FLOAT;
-    dd.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-
-    D3D12_CLEAR_VALUE dcv{};
-    dcv.Format = DXGI_FORMAT_D32_FLOAT;
-    dcv.DepthStencil.Depth = 1.0f;
-    dcv.DepthStencil.Stencil = 0;
-
-    dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &dd,
-        D3D12_RESOURCE_STATE_DEPTH_WRITE, &dcv, IID_PPV_ARGS(&m_sceneDepth));
-
-    D3D12_DEPTH_STENCIL_VIEW_DESC dsvd{};
-    dsvd.Format = DXGI_FORMAT_D32_FLOAT;
-    dsvd.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-    dev->CreateDepthStencilView(m_sceneDepth.Get(), &dsvd, m_sceneDSV);
-
-    // ImGui の SRV を確保（slot=1 を使用）
-    m_sceneTexId = m_imgui->CreateOrUpdateTextureSRV(m_sceneColor.Get(), m_offscreenFmt, /*slot*/1);
-
-    // 記録
-    m_sceneRTW = w; m_sceneRTH = h;
-    m_sceneState = D3D12_RESOURCE_STATE_RENDER_TARGET;
-}
-
-void D3D12Renderer::ReleaseOffscreen()
-{
-    WaitForGPU();               // in-flight回避
-    m_sceneTexId = 0;
-    m_sceneDepth.Reset();
-    m_offscreenDSVHeap.Reset();
-    m_sceneColor.Reset();
-    m_offscreenRTVHeap.Reset();
-    m_sceneState = D3D12_RESOURCE_STATE_COMMON;
-    m_sceneRTW = m_sceneRTH = 0;
-}
-
-//==============================================================================
-// Offscreen (Game) 作成/破棄
-//==============================================================================
-void D3D12Renderer::CreateGameOffscreen(UINT w, UINT h)
-{
-    ID3D12Device* dev = m_dev->GetDevice();
-
-    // RTV heap
-    D3D12_DESCRIPTOR_HEAP_DESC rdesc{};
-    rdesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-    rdesc.NumDescriptors = 1;
-    dev->CreateDescriptorHeap(&rdesc, IID_PPV_ARGS(&m_gameRTVHeap));
-    m_gameRTV = m_gameRTVHeap->GetCPUDescriptorHandleForHeapStart();
-
-    // DSV heap
-    D3D12_DESCRIPTOR_HEAP_DESC ddesc{};
-    ddesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-    ddesc.NumDescriptors = 1;
-    dev->CreateDescriptorHeap(&ddesc, IID_PPV_ARGS(&m_gameDSVHeap));
-    m_gameDSV = m_gameDSVHeap->GetCPUDescriptorHandleForHeapStart();
-
-    // Color
-    D3D12_RESOURCE_DESC rd{};
-    rd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    rd.Width = w; rd.Height = h;
-    rd.DepthOrArraySize = 1; rd.MipLevels = 1;
-    rd.Format = m_gameColorFmt;
-    rd.SampleDesc = { 1,0 };
-    rd.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
-
-    D3D12_CLEAR_VALUE clr{}; clr.Format = m_gameColorFmt;
-    clr.Color[0] = 0.12f; clr.Color[1] = 0.12f; clr.Color[2] = 0.12f; clr.Color[3] = 1.0f;
-
-    CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
-    dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, // SRV開始でもOK
-        &clr, IID_PPV_ARGS(&m_gameColor));
-    dev->CreateRenderTargetView(m_gameColor.Get(), nullptr, m_gameRTV);
-
-    // Depth
-    D3D12_RESOURCE_DESC dd{};
-    dd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    dd.Width = w; dd.Height = h;
-    dd.DepthOrArraySize = 1; dd.MipLevels = 1;
-    dd.Format = m_gameDepthFmt;
-    dd.SampleDesc = { 1,0 };
-    dd.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-
-    D3D12_CLEAR_VALUE dcv{}; dcv.Format = m_gameDepthFmt;
-    dcv.DepthStencil.Depth = 1.0f; dcv.DepthStencil.Stencil = 0;
-
-    dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &dd,
-        D3D12_RESOURCE_STATE_DEPTH_WRITE, &dcv, IID_PPV_ARGS(&m_gameDepth));
-    dev->CreateDepthStencilView(m_gameDepth.Get(), nullptr, m_gameDSV);
-
-    // SRV を ImGui ヒープに登録（slot=2 など重複しない番号で）
-    m_gameTexId = m_imgui->CreateOrUpdateTextureSRV(m_gameColor.Get(), m_gameColorFmt, /*slot*/2);
-
-    m_gameRTW = w; m_gameRTH = h;
-    m_gameState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-}
-
-void D3D12Renderer::ReleaseGameOffscreen()
-{
-    WaitForGPU();
-    m_gameTexId = 0;
-    m_gameDepth.Reset();
-    m_gameColor.Reset();
-    m_gameDSVHeap.Reset();
-    m_gameRTVHeap.Reset();
-    m_gameRTW = m_gameRTH = 0;
-    m_gameState = D3D12_RESOURCE_STATE_COMMON;
 }
