@@ -132,11 +132,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="EditorInterop.cpp" />
     <ClCompile Include="Editor\ImGuiLayer.cpp" />
     <ClCompile Include="Graphics\D3D12Renderer.cpp" />
     <ClCompile Include="Graphics\D3D12\Core\DeviceResources.cpp" />
     <ClCompile Include="Graphics\D3D12\Core\FrameResources.cpp" />
+    <ClCompile Include="Graphics\D3D12\Core\RenderTarget.cpp" />
     <ClCompile Include="Graphics\D3D12\Debug\DxDebug.cpp" />
     <ClCompile Include="Graphics\D3D12\Pipeline\PipelineStateBuilder.cpp" />
     <ClCompile Include="Graphics\D3D12\Upload\MeshUploader.cpp" />
@@ -148,13 +148,13 @@
     <ClCompile Include="Imgui\imgui_tables.cpp" />
     <ClCompile Include="Imgui\imgui_widgets.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="RenderTarget.cpp" />
     <ClCompile Include="Runtime\Assets\Mesh.cpp" />
     <ClCompile Include="Runtime\Components\CameraComponent.cpp" />
     <ClCompile Include="Runtime\Components\CameraControllerComponent.cpp" />
     <ClCompile Include="Runtime\Components\Component.cpp" />
     <ClCompile Include="Runtime\Components\MeshRendererComponent.cpp" />
     <ClCompile Include="Runtime\Components\TransformComponent.cpp" />
+    <ClCompile Include="Runtime\Core\EditorInterop.cpp" />
     <ClCompile Include="Runtime\Core\Input.cpp" />
     <ClCompile Include="Runtime\Core\Time.cpp" />
     <ClCompile Include="Runtime\Scene\GameObject.cpp" />
@@ -162,12 +162,12 @@
     <ClCompile Include="Runtime\Scene\SceneManager.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="EditorInterop.h" />
     <ClInclude Include="Editor\EditorContext.h" />
     <ClInclude Include="Editor\ImGuiLayer.h" />
     <ClInclude Include="Graphics\D3D12Renderer.h" />
     <ClInclude Include="Graphics\D3D12\Core\DeviceResources.h" />
     <ClInclude Include="Graphics\D3D12\Core\FrameResources.h" />
+    <ClInclude Include="Graphics\D3D12\Core\RendererTarget.h" />
     <ClInclude Include="Graphics\D3D12\Debug\DxDebug.h" />
     <ClInclude Include="Graphics\D3D12\Pipeline\PipelineStateBuilder.h" />
     <ClInclude Include="Graphics\D3D12\Upload\MeshUploader.h" />
@@ -180,13 +180,13 @@
     <ClInclude Include="Imgui\imstb_rectpack.h" />
     <ClInclude Include="Imgui\imstb_textedit.h" />
     <ClInclude Include="Imgui\imstb_truetype.h" />
-    <ClInclude Include="RendererTarget.h" />
     <ClInclude Include="Runtime\Assets\Mesh.h" />
     <ClInclude Include="Runtime\Components\CameraComponent.h" />
     <ClInclude Include="Runtime\Components\CameraControllerComponent.h" />
     <ClInclude Include="Runtime\Components\Component.h" />
     <ClInclude Include="Runtime\Components\MeshRendererComponent.h" />
     <ClInclude Include="Runtime\Components\TransformComponent.h" />
+    <ClInclude Include="Runtime\Core\EditorInterop.h" />
     <ClInclude Include="Runtime\Core\Input.h" />
     <ClInclude Include="Runtime\Core\Time.h" />
     <ClInclude Include="Runtime\Scene\GameObject.h" />

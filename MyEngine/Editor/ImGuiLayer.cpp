@@ -2,7 +2,7 @@
 #include "ImGuiLayer.h"
 // ▼プロジェクト構成に合わせて相対パスを調整（例は Renderer/ と Editor/ が同階層）
 #include "EditorContext.h"
-#include "EditorInterop.h"
+#include "Core/EditorInterop.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"

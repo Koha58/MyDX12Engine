@@ -1,5 +1,5 @@
-﻿  RenderTarget.cpp
-  メモ: インクルード ファイル:  D:\Users\2312004\Documents\MyEngine\MyEngine\RendererTarget.h
+﻿  ImGuiLayer.cpp
+  メモ: インクルード ファイル:  D:\Users\2312004\Documents\MyEngine\MyEngine\Editor\ImGuiLayer.h
   メモ: インクルード ファイル:   C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\winrt\wrl/client.h
   メモ: インクルード ファイル:    C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\stddef.h
   メモ: インクルード ファイル:     C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt.h
@@ -256,91 +256,83 @@
   メモ: インクルード ファイル:    D:\Users\2312004\Documents\MyEngine\MyEngine\Imgui\imconfig.h
   メモ: インクルード ファイル:    C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\float.h
   メモ: インクルード ファイル:    C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\assert.h
-  メモ: インクルード ファイル:   D:\Users\2312004\Documents\MyEngine\MyEngine\imgui\backends\imgui_impl_win32.h
-  メモ: インクルード ファイル:   D:\Users\2312004\Documents\MyEngine\MyEngine\imgui\backends\imgui_impl_dx12.h
-  メモ: インクルード ファイル:   D:\Users\2312004\Documents\MyEngine\MyEngine\Imgui\imgui_internal.h
-  メモ: インクルード ファイル:    C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\stdio.h
-  メモ: インクルード ファイル:     C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_wstdio.h
-  メモ: インクルード ファイル:      C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_stdio_config.h
-  メモ: インクルード ファイル:    C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\math.h
-  メモ: インクルード ファイル:     C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_math.h
-  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\immintrin.h
-  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\wmmintrin.h
-  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\nmmintrin.h
-  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\smmintrin.h
-  メモ: インクルード ファイル:        C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\tmmintrin.h
-  メモ: インクルード ファイル:         C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\pmmintrin.h
-  メモ: インクルード ファイル:          C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\emmintrin.h
-  メモ: インクルード ファイル:           C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xmmintrin.h
-  メモ: インクルード ファイル:            C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\mmintrin.h
-  メモ: インクルード ファイル:            C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\malloc.h
-  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\zmmintrin.h
-  メモ: インクルード ファイル:  D:\Users\2312004\Documents\MyEngine\MyEngine\include\d3dx12.h
-  メモ: インクルード ファイル:   D:\Users\2312004\Documents\MyEngine\MyEngine\include\d3dx12_barriers.h
-  メモ: インクルード ファイル:   D:\Users\2312004\Documents\MyEngine\MyEngine\include\d3dx12_core.h
-  メモ: インクルード ファイル:    D:\Users\2312004\Documents\MyEngine\MyEngine\include\d3dx12_default.h
-  メモ: インクルード ファイル:   D:\Users\2312004\Documents\MyEngine\MyEngine\include\d3dx12_pipeline_state_stream.h
-  メモ: インクルード ファイル:   D:\Users\2312004\Documents\MyEngine\MyEngine\include\d3dx12_render_pass.h
-  メモ: インクルード ファイル:   D:\Users\2312004\Documents\MyEngine\MyEngine\include\d3dx12_resource_helpers.h
-  メモ: インクルード ファイル:    D:\Users\2312004\Documents\MyEngine\MyEngine\include\d3dx12_property_format_table.h
-  メモ: インクルード ファイル:   D:\Users\2312004\Documents\MyEngine\MyEngine\include\d3dx12_root_signature.h
-  メモ: インクルード ファイル:   D:\Users\2312004\Documents\MyEngine\MyEngine\include\d3dx12_state_object.h
-  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\list
-  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\yvals_core.h
-  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xkeycheck.h
-  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xmemory
+  メモ: インクルード ファイル:  D:\Users\2312004\Documents\MyEngine\MyEngine\Editor\EditorContext.h
+  メモ: インクルード ファイル:   C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\functional
+  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\yvals_core.h
+  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xkeycheck.h
+  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\exception
+  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\yvals.h
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\crtdefs.h
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\use_ansi.h
+  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cstdlib
+  メモ: インクルード ファイル:      C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\math.h
+  メモ: インクルード ファイル:       C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_math.h
+  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\type_traits
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cstddef
+  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xtr1common
   メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cstdint
   メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\stdint.h
-  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cstdlib
-  メモ: インクルード ファイル:       C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\math.h
-  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\limits
-  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cfloat
-  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\climits
-  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cwchar
-  メモ: インクルード ファイル:        C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cstdio
-  メモ: インクルード ファイル:        C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\wchar.h
-  メモ: インクルード ファイル:         C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_wconio.h
-  メモ: インクルード ファイル:         C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_wdirect.h
-  メモ: インクルード ファイル:         C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_wio.h
-  メモ: インクルード ファイル:          C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_share.h
-  メモ: インクルード ファイル:         C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_wprocess.h
-  メモ: インクルード ファイル:         C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_wtime.h
-  メモ: インクルード ファイル:         C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\sys/stat.h
-  メモ: インクルード ファイル:          C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\sys/types.h
-  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xtr1common
-  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\intrin0.h
-  メモ: インクルード ファイル:        C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\intrin0.inl.h
-  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\new
-  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\exception
-  メモ: インクルード ファイル:        C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\yvals.h
-  メモ: インクルード ファイル:         C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\crtdefs.h
-  メモ: インクルード ファイル:         C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\use_ansi.h
-  メモ: インクルード ファイル:        C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\type_traits
-  メモ: インクルード ファイル:         C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cstddef
-  メモ: インクルード ファイル:         C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cstring
-  メモ: インクルード ファイル:        C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\vcruntime_exception.h
-  メモ: インクルード ファイル:         C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\eh.h
-  メモ: インクルード ファイル:          C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_terminate.h
-  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xatomic.h
-  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xutility
-  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\__msvc_iter_core.hpp
-  メモ: インクルード ファイル:        C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\utility
-  メモ: インクルード ファイル:         C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\initializer_list
-  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xpolymorphic_allocator.h
-  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\tuple
-  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\forward_list
-  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\vector
-  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\__msvc_bit_utils.hpp
-  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\__msvc_sanitizer_annotate_container.hpp
-  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\memory
-  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\iosfwd
-  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\typeinfo
-  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\vcruntime_typeinfo.h
-  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\string
-  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xstring
-  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\__msvc_string_view.hpp
-  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cctype
-  メモ: インクルード ファイル:   D:\Users\2312004\Documents\MyEngine\MyEngine\include\d3dx12_check_feature_support.h
-  メモ: インクルード ファイル:  D:\Users\2312004\Documents\MyEngine\MyEngine\Editor/ImGuiLayer.h
-D:\Users\2312004\Documents\MyEngine\MyEngine\RenderTarget.cpp(116,1): warning C4715: 'RenderTarget::EnsureImGuiSRV': 値を返さないコントロール パスがあります。
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cstring
+  メモ: インクルード ファイル:     C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\malloc.h
+  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\vcruntime_exception.h
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\eh.h
+  メモ: インクルード ファイル:       C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_terminate.h
+  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\tuple
+  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\__msvc_iter_core.hpp
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\utility
+  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\initializer_list
+  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\typeinfo
+  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\vcruntime_typeinfo.h
+  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xmemory
+  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\limits
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cfloat
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\climits
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cwchar
+  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cstdio
+  メモ: インクルード ファイル:        C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\stdio.h
+  メモ: インクルード ファイル:         C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_wstdio.h
+  メモ: インクルード ファイル:          C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_stdio_config.h
+  メモ: インクルード ファイル:       C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\wchar.h
+  メモ: インクルード ファイル:        C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_wconio.h
+  メモ: インクルード ファイル:        C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_wdirect.h
+  メモ: インクルード ファイル:        C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_wio.h
+  メモ: インクルード ファイル:         C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_share.h
+  メモ: インクルード ファイル:        C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_wprocess.h
+  メモ: インクルード ファイル:        C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\corecrt_wtime.h
+  メモ: インクルード ファイル:        C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\sys/stat.h
+  メモ: インクルード ファイル:         C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\sys/types.h
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\intrin0.h
+  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\intrin0.inl.h
+  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\new
+  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xatomic.h
+  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xutility
+  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\unordered_map
+  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xhash
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\cmath
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\list
+  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xpolymorphic_allocator.h
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\vector
+  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\__msvc_bit_utils.hpp
+  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\__msvc_sanitizer_annotate_container.hpp
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xbit_ops.h
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xnode_handle.h
+  メモ: インクルード ファイル:  D:\Users\2312004\Documents\MyEngine\MyEngine\Runtime\Core/EditorInterop.h
+  メモ: インクルード ファイル:  D:\Users\2312004\Documents\MyEngine\MyEngine\imgui\backends\imgui_impl_win32.h
+  メモ: インクルード ファイル:  D:\Users\2312004\Documents\MyEngine\MyEngine\imgui\backends\imgui_impl_dx12.h
+  メモ: インクルード ファイル:  D:\Users\2312004\Documents\MyEngine\MyEngine\Imgui\imgui_internal.h
+  メモ: インクルード ファイル:   C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt\math.h
+  メモ: インクルード ファイル:   C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\immintrin.h
+  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\wmmintrin.h
+  メモ: インクルード ファイル:     C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\nmmintrin.h
+  メモ: インクルード ファイル:      C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\smmintrin.h
+  メモ: インクルード ファイル:       C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\tmmintrin.h
+  メモ: インクルード ファイル:        C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\pmmintrin.h
+  メモ: インクルード ファイル:         C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\emmintrin.h
+  メモ: インクルード ファイル:          C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\xmmintrin.h
+  メモ: インクルード ファイル:           C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\mmintrin.h
+  メモ: インクルード ファイル:    C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.43.34808\include\zmmintrin.h
+  EditorInterop.cpp
+  メモ: インクルード ファイル:  D:\Users\2312004\Documents\MyEngine\MyEngine\Runtime\Core\EditorInterop.h
+  コードを生成中...
+  LINK : 前回のインクリメンタル リンクで D:\Users\2312004\Documents\MyEngine\x64\Debug\MyEngine.exe が見つからなかったか、ビルドされませんでした。フル リンクを行います。
   MyEngine.vcxproj -> D:\Users\2312004\Documents\MyEngine\x64\Debug\MyEngine.exe

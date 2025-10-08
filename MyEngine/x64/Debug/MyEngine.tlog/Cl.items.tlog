@@ -1,8 +1,8 @@
-D:\Users\2312004\Documents\MyEngine\MyEngine\EditorInterop.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\EditorInterop.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Editor\ImGuiLayer.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\ImGuiLayer.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Graphics\D3D12Renderer.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\D3D12Renderer.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Graphics\D3D12\Core\DeviceResources.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\DeviceResources.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Graphics\D3D12\Core\FrameResources.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\FrameResources.obj
+D:\Users\2312004\Documents\MyEngine\MyEngine\Graphics\D3D12\Core\RenderTarget.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\RenderTarget.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Graphics\D3D12\Debug\DxDebug.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\DxDebug.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Graphics\D3D12\Pipeline\PipelineStateBuilder.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\PipelineStateBuilder.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Graphics\D3D12\Upload\MeshUploader.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\MeshUploader.obj
@@ -14,13 +14,13 @@ D:\Users\2312004\Documents\MyEngine\MyEngine\Imgui\imgui_draw.cpp;D:\Users\23120
 D:\Users\2312004\Documents\MyEngine\MyEngine\Imgui\imgui_tables.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\imgui_tables.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Imgui\imgui_widgets.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\imgui_widgets.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\main.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\main.obj
-D:\Users\2312004\Documents\MyEngine\MyEngine\RenderTarget.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\RenderTarget.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Runtime\Assets\Mesh.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\Mesh.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Runtime\Components\CameraComponent.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\CameraComponent.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Runtime\Components\CameraControllerComponent.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\CameraControllerComponent.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Runtime\Components\Component.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\Component.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Runtime\Components\MeshRendererComponent.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\MeshRendererComponent.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Runtime\Components\TransformComponent.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\TransformComponent.obj
+D:\Users\2312004\Documents\MyEngine\MyEngine\Runtime\Core\EditorInterop.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\EditorInterop.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Runtime\Core\Input.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\Input.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Runtime\Core\Time.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\Time.obj
 D:\Users\2312004\Documents\MyEngine\MyEngine\Runtime\Scene\GameObject.cpp;D:\Users\2312004\Documents\MyEngine\MyEngine\x64\Debug\GameObject.obj

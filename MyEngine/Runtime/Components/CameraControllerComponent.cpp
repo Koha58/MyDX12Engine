@@ -5,7 +5,7 @@
 #include "CameraControllerComponent.h"
 #include "Scene/GameObject.h"
 #include "Core/Input.h"
-#include "EditorInterop.h"
+#include "Core/EditorInterop.h"
 
 
 #include "imgui.h"
