@@ -53,10 +53,6 @@ public:
 
     UINT GetFrameCount() const { return m_frameCount; }
 
-    // エディタ用ヘルパ←これを消す
-    const char* GONameUTF8(const GameObject* go);
-    void DrawHierarchyNode(const std::shared_ptr<GameObject>& go);
-
 private:
     // ========= 基本リソース =========
     std::unique_ptr<DeviceResources>                  m_dev;
@@ -86,9 +82,14 @@ private:
     UINT                                              m_pendingSceneRTW = 0;
     UINT                                              m_pendingSceneRTH = 0;
 
-    // SRVをImGuiヒープに登録するスロット（重複不可）
-    static constexpr UINT                             kSceneSrvSlot = 1;
-    static constexpr UINT                             kGameSrvSlot = 2;
+    // ImGui SRVのベーススロット（フレームごとに使い分け）
+    static constexpr UINT                             kSceneSrvBase = 16;
+    static constexpr UINT                             kGameSrvBase = 32;
+
+    // Sceneの“基準射影”（水平FOV基準）を保持
+    DirectX::XMFLOAT4X4 m_sceneProjInit{};
+    bool                m_sceneProjCaptured = false;
+
 
     // ========= Game用：初回にSceneカメラを固定 =========
     bool                                              m_gameCamFrozen = false;
@@ -98,6 +99,10 @@ private:
 
     // ========= 遅延破棄キュー =========
     GpuGarbageQueue                                   m_garbage;
+
+    // Sceneビューのデバウンス用
+    UINT                                              m_wantSceneW = 0, m_wantSceneH = 0;
+    int                                               m_sceneSizeStable = 0;
 
     // 内部ユーティリティ
     void RequestSceneRTResize(UINT w, UINT h) { m_pendingSceneRTW = w; m_pendingSceneRTH = h; }
