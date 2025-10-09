@@ -132,6 +132,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="EditorPanels.cpp" />
     <ClCompile Include="Editor\ImGuiLayer.cpp" />
     <ClCompile Include="Graphics\D3D12Renderer.cpp" />
     <ClCompile Include="Graphics\D3D12\Core\DeviceResources.cpp" />
@@ -163,6 +164,7 @@
     <ClCompile Include="Runtime\Scene\SceneManager.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="EditorPanels.h" />
     <ClInclude Include="Editor\EditorContext.h" />
     <ClInclude Include="Editor\ImGuiLayer.h" />
     <ClInclude Include="Graphics\D3D12Renderer.h" />

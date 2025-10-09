@@ -53,7 +53,7 @@ public:
 
     UINT GetFrameCount() const { return m_frameCount; }
 
-    // エディタ用ヘルパ
+    // エディタ用ヘルパ←これを消す
     const char* GONameUTF8(const GameObject* go);
     void DrawHierarchyNode(const std::shared_ptr<GameObject>& go);
 
@@ -101,4 +101,13 @@ private:
 
     // 内部ユーティリティ
     void RequestSceneRTResize(UINT w, UINT h) { m_pendingSceneRTW = w; m_pendingSceneRTH = h; }
+
+    // ===== 共通描画パス(1カメラ→1RT) =====
+    struct CameraMatrices
+    {
+        DirectX::XMMATRIX view;
+        DirectX::XMMATRIX proj;
+    };
+
+    void DrawSceneToRT(RenderTarget& rt, const CameraMatrices& cam, UINT cbBase);
 };

@@ -177,6 +177,9 @@
     <ClCompile Include="Graphics\D3D12\Core\GpuGarbage.cpp">
       <Filter>ソース ファイル\Graphics\D3D12\Core</Filter>
     </ClCompile>
+    <ClCompile Include="EditorPanels.cpp">
+      <Filter>ソース ファイル\Editor</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Imgui\imconfig.h">
@@ -271,6 +274,9 @@
     </ClInclude>
     <ClInclude Include="Graphics\D3D12\Core\GpuGarbage.h">
       <Filter>ヘッダー ファイル\Graphics\D3D12\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorPanels.h">
+      <Filter>ヘッダー ファイル\Editor</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
