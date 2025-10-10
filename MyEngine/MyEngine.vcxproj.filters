@@ -88,6 +88,12 @@
     <Filter Include="ヘッダー ファイル\Runtime\Assets">
       <UniqueIdentifier>{e2772a2f-c673-48e4-866a-a8489c0b261e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ヘッダー ファイル\Graphics\D3D12\Renderer">
+      <UniqueIdentifier>{f8f26ba2-a983-4dad-8bf6-c4f4524e96a2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Graphics\D3D12\Renderer">
+      <UniqueIdentifier>{d3fa2766-a28a-498a-ac21-76ffcf065c84}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -177,8 +183,11 @@
     <ClCompile Include="Graphics\D3D12\Core\GpuGarbage.cpp">
       <Filter>ソース ファイル\Graphics\D3D12\Core</Filter>
     </ClCompile>
-    <ClCompile Include="EditorPanels.cpp">
-      <Filter>ソース ファイル\Editor</Filter>
+    <ClCompile Include="Editor\EditorPanels.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\D3D12\Renderer\SceneRenderer.cpp">
+      <Filter>ソース ファイル\Graphics\D3D12\Renderer</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -275,8 +284,11 @@
     <ClInclude Include="Graphics\D3D12\Core\GpuGarbage.h">
       <Filter>ヘッダー ファイル\Graphics\D3D12\Core</Filter>
     </ClInclude>
-    <ClInclude Include="EditorPanels.h">
-      <Filter>ヘッダー ファイル\Editor</Filter>
+    <ClInclude Include="Editor\EditorPanels.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\D3D12\Renderer\SceneRenderer.h">
+      <Filter>ヘッダー ファイル\Graphics\D3D12\Renderer</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

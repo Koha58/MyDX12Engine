@@ -141,6 +141,7 @@
     <ClCompile Include="Graphics\D3D12\Core\RenderTarget.cpp" />
     <ClCompile Include="Graphics\D3D12\Debug\DxDebug.cpp" />
     <ClCompile Include="Graphics\D3D12\Pipeline\PipelineStateBuilder.cpp" />
+    <ClCompile Include="Graphics\D3D12\Renderer\SceneRenderer.cpp" />
     <ClCompile Include="Graphics\D3D12\Upload\MeshUploader.cpp" />
     <ClCompile Include="Imgui\backends\imgui_impl_dx12.cpp" />
     <ClCompile Include="Imgui\backends\imgui_impl_win32.cpp" />
@@ -174,6 +175,7 @@
     <ClInclude Include="Graphics\D3D12\Core\RenderTarget.h" />
     <ClInclude Include="Graphics\D3D12\Debug\DxDebug.h" />
     <ClInclude Include="Graphics\D3D12\Pipeline\PipelineStateBuilder.h" />
+    <ClInclude Include="Graphics\D3D12\Renderer\SceneRenderer.h" />
     <ClInclude Include="Graphics\D3D12\Upload\MeshUploader.h" />
     <ClInclude Include="Graphics\SceneConstantBuffer.h" />
     <ClInclude Include="Imgui\backends\imgui_impl_dx12.h" />

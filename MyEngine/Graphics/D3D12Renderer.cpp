@@ -195,7 +195,7 @@ void D3D12Renderer::Render()
             MakeProjConstHFov(XMLoadFloat4x4(&m_sceneProjInit), sceneAspect);
 
         CameraMatrices camScene{ m_Camera->GetViewMatrix(), projSceneHFOV };
-        DrawSceneToRT(m_sceneRT, camScene, /*cbBase=*/0);
+        m_sceneRenderer.Record(m_cmd.Get(),m_sceneRT, camScene, m_CurrentScene.get(), /*cbBase=*/0, /*frameIndex=*/fi, /*maxObjects=*/MaxObjects);
 
         // ===== Game を一度だけ Scene に同期して固定 =====
         if (!m_gameCamFrozen &&
@@ -221,7 +221,7 @@ void D3D12Renderer::Render()
     if (m_gameRT.Color() && m_gameCamFrozen) {
         using namespace DirectX;
         CameraMatrices cam{ XMLoadFloat4x4(&m_gameViewInit), XMLoadFloat4x4(&m_gameProjInit) };
-        DrawSceneToRT(m_gameRT, cam, /*cbBase=*/MaxObjects);
+        m_sceneRenderer.Record(m_cmd.Get(), m_gameRT, cam, m_CurrentScene.get(), /*cbBase=*/MaxObjects, /*frameIndex=*/fi, /*maxObjects=*/MaxObjects);
     }
 
     // =====================================================================
@@ -481,72 +481,72 @@ void D3D12Renderer::ReleaseSceneResources()
     m_CurrentScene.reset();
 }
 
-//==============================================================================
-// 共通描画パス（1カメラ→1RT）
-//==============================================================================
-void D3D12Renderer::DrawSceneToRT(RenderTarget& rt, const CameraMatrices& cam, UINT cbBase)
-{
-    if (!rt.Color()) return;
-
-    // RT セット
-    rt.TransitionToRT(m_cmd.Get());
-    rt.Bind(m_cmd.Get());
-    rt.Clear(m_cmd.Get());
-
-    // VP/SC/RS
-    D3D12_VIEWPORT vp{ 0.f, 0.f, (float)rt.Width(), (float)rt.Height(), 0.f, 1.f };
-    D3D12_RECT     sc{ 0, 0, (LONG)rt.Width(), (LONG)rt.Height() };
-    m_cmd->RSSetViewports(1, &vp);
-    m_cmd->RSSetScissorRects(1, &sc);
-    m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    m_cmd->SetGraphicsRootSignature(m_pipe.root.Get());
-
-    if (m_CurrentScene) {
-        auto& fr = m_frames.Get(m_dev->GetCurrentBackBufferIndex());
-        UINT8* cbCPU = fr.cpu;
-        D3D12_GPU_VIRTUAL_ADDRESS cbGPU = fr.resource->GetGPUVirtualAddress();
-        const UINT cbStride = m_frames.GetCBStride();
-        UINT slot = 0;
-
-        using namespace DirectX;
-        std::function<void(std::shared_ptr<GameObject>)> draw =
-            [&](std::shared_ptr<GameObject> go)
-            {
-                if (!go || slot >= MaxObjects) return;
-                auto mr = go->GetComponent<MeshRendererComponent>();
-                if (mr && mr->VertexBuffer && mr->IndexBuffer && mr->IndexCount > 0)
-                {
-                    XMMATRIX world = go->Transform->GetWorldMatrix();
-                    XMMATRIX mvp = world * cam.view * cam.proj;
-
-                    XMVECTOR det;
-                    XMMATRIX inv = XMMatrixInverse(&det, world);
-                    float detScalar = XMVectorGetX(det);
-                    if (!std::isfinite(detScalar) || std::fabs(detScalar) < 1e-8f) inv = XMMatrixIdentity();
-                    XMMATRIX worldIT = XMMatrixTranspose(inv);
-
-                    SceneConstantBuffer cb{};
-                    XMStoreFloat4x4(&cb.mvp, mvp);
-                    XMStoreFloat4x4(&cb.world, world);
-                    XMStoreFloat4x4(&cb.worldIT, worldIT);
-                    XMStoreFloat3(&cb.lightDir, XMVector3Normalize(XMVectorSet(0.0f, -1.0f, -1.0f, 0.0f)));
-                    cb.pad = 0.0f;
-
-                    const UINT dst = cbBase + slot;
-                    std::memcpy(cbCPU + (UINT64)dst * cbStride, &cb, sizeof(cb));
-                    m_cmd->SetGraphicsRootConstantBufferView(0, cbGPU + (UINT64)dst * cbStride);
-
-                    m_cmd->IASetVertexBuffers(0, 1, &mr->VertexBufferView);
-                    m_cmd->IASetIndexBuffer(&mr->IndexBufferView);
-                    m_cmd->DrawIndexedInstanced(mr->IndexCount, 1, 0, 0, 0);
-                    ++slot;
-                }
-                for (auto& ch : go->GetChildren()) draw(ch);
-            };
-
-        for (auto& root : m_CurrentScene->GetRootGameObjects()) draw(root);
-    }
-
-    rt.TransitionToSRV(m_cmd.Get());
-}
+////==============================================================================
+//// 共通描画パス（1カメラ→1RT）
+////==============================================================================
+//void D3D12Renderer::DrawSceneToRT(RenderTarget& rt, const CameraMatrices& cam, UINT cbBase)
+//{
+//    if (!rt.Color()) return;
+//
+//    // RT セット
+//    rt.TransitionToRT(m_cmd.Get());
+//    rt.Bind(m_cmd.Get());
+//    rt.Clear(m_cmd.Get());
+//
+//    // VP/SC/RS
+//    D3D12_VIEWPORT vp{ 0.f, 0.f, (float)rt.Width(), (float)rt.Height(), 0.f, 1.f };
+//    D3D12_RECT     sc{ 0, 0, (LONG)rt.Width(), (LONG)rt.Height() };
+//    m_cmd->RSSetViewports(1, &vp);
+//    m_cmd->RSSetScissorRects(1, &sc);
+//    m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+//    m_cmd->SetGraphicsRootSignature(m_pipe.root.Get());
+//
+//    if (m_CurrentScene) {
+//        auto& fr = m_frames.Get(m_dev->GetCurrentBackBufferIndex());
+//        UINT8* cbCPU = fr.cpu;
+//        D3D12_GPU_VIRTUAL_ADDRESS cbGPU = fr.resource->GetGPUVirtualAddress();
+//        const UINT cbStride = m_frames.GetCBStride();
+//        UINT slot = 0;
+//
+//        using namespace DirectX;
+//        std::function<void(std::shared_ptr<GameObject>)> draw =
+//            [&](std::shared_ptr<GameObject> go)
+//            {
+//                if (!go || slot >= MaxObjects) return;
+//                auto mr = go->GetComponent<MeshRendererComponent>();
+//                if (mr && mr->VertexBuffer && mr->IndexBuffer && mr->IndexCount > 0)
+//                {
+//                    XMMATRIX world = go->Transform->GetWorldMatrix();
+//                    XMMATRIX mvp = world * cam.view * cam.proj;
+//
+//                    XMVECTOR det;
+//                    XMMATRIX inv = XMMatrixInverse(&det, world);
+//                    float detScalar = XMVectorGetX(det);
+//                    if (!std::isfinite(detScalar) || std::fabs(detScalar) < 1e-8f) inv = XMMatrixIdentity();
+//                    XMMATRIX worldIT = XMMatrixTranspose(inv);
+//
+//                    SceneConstantBuffer cb{};
+//                    XMStoreFloat4x4(&cb.mvp, mvp);
+//                    XMStoreFloat4x4(&cb.world, world);
+//                    XMStoreFloat4x4(&cb.worldIT, worldIT);
+//                    XMStoreFloat3(&cb.lightDir, XMVector3Normalize(XMVectorSet(0.0f, -1.0f, -1.0f, 0.0f)));
+//                    cb.pad = 0.0f;
+//
+//                    const UINT dst = cbBase + slot;
+//                    std::memcpy(cbCPU + (UINT64)dst * cbStride, &cb, sizeof(cb));
+//                    m_cmd->SetGraphicsRootConstantBufferView(0, cbGPU + (UINT64)dst * cbStride);
+//
+//                    m_cmd->IASetVertexBuffers(0, 1, &mr->VertexBufferView);
+//                    m_cmd->IASetIndexBuffer(&mr->IndexBufferView);
+//                    m_cmd->DrawIndexedInstanced(mr->IndexCount, 1, 0, 0, 0);
+//                    ++slot;
+//                }
+//                for (auto& ch : go->GetChildren()) draw(ch);
+//            };
+//
+//        for (auto& root : m_CurrentScene->GetRootGameObjects()) draw(root);
+//    }
+//
+//    rt.TransitionToSRV(m_cmd.Get());
+//}
 

@@ -16,6 +16,7 @@
 #include "Assets/Mesh.h"
 #include "Components/MeshRendererComponent.h"
 #include "SceneConstantBuffer.h"
+#include "Renderer/SceneRenderer.h"
 
 // 下位モジュール
 #include "Core/DeviceResources.h"           // デバイス/スワップチェイン
@@ -107,12 +108,14 @@ private:
     // 内部ユーティリティ
     void RequestSceneRTResize(UINT w, UINT h) { m_pendingSceneRTW = w; m_pendingSceneRTH = h; }
 
-    // ===== 共通描画パス(1カメラ→1RT) =====
-    struct CameraMatrices
-    {
-        DirectX::XMMATRIX view;
-        DirectX::XMMATRIX proj;
-    };
+    //// ===== 共通描画パス(1カメラ→1RT) =====
+    //struct CameraMatrices
+    //{
+    //    DirectX::XMMATRIX view;
+    //    DirectX::XMMATRIX proj;
+    //};
 
-    void DrawSceneToRT(RenderTarget& rt, const CameraMatrices& cam, UINT cbBase);
+    //void DrawSceneToRT(RenderTarget& rt, const CameraMatrices& cam, UINT cbBase);
+
+    SceneRenderer m_sceneRenderer;
 };
