@@ -12,6 +12,26 @@
 #include <cmath>   // floorf
 #include <cstdio>  // snprintf
 
+// 端のにじみを防ぐ：UVを半テクセル内側に詰め、矩形はピクセルスナップ
+static inline void AddImage_NoEdge(ImDrawList* dl, ImTextureID tex,
+    ImVec2 p0, ImVec2 p1,
+    int texW, int texH)
+{
+    if (!tex || texW <= 0 || texH <= 0) return;
+
+    const float ueps = 0.5f / (float)texW;
+    const float veps = 0.5f / (float)texH;
+    ImVec2 uv0(ueps, veps);
+    ImVec2 uv1(1.0f - ueps, 1.0f - veps);
+
+    // ピクセルスナップ（小数→整数）で微妙な隙間/にじみを抑える
+    ImVec2 q0 = ImFloor(p0);
+    ImVec2 q1 = ImFloor(p1);
+
+    dl->AddImage(tex, q0, q1, uv0, uv1);
+}
+
+
 bool ImGuiLayer::Initialize(HWND hwnd,
     ID3D12Device* device,
     ID3D12CommandQueue* queue,
@@ -206,25 +226,25 @@ void ImGuiLayer::BuildDockAndWindows(EditorContext& ctx)
         // ===== Scene =====
         {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+
             const ImGuiWindowFlags sceneFlags =
-                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+                ImGuiWindowFlags_NoScrollbar |
+                ImGuiWindowFlags_NoScrollWithMouse |
+                ImGuiWindowFlags_NoDecoration;
 
             if (ImGui::Begin("Scene", nullptr, sceneFlags))
             {
-                ImVec2 avail = ImGui::GetContentRegionAvail();
-                avail.x = floorf(avail.x);
-                avail.y = floorf(avail.y);
+                ImVec2 avail = ImFloor(ImGui::GetContentRegionAvail());
+                ImVec2 p0 = ImFloor(ImGui::GetCursorScreenPos());
+                ImVec2 p1 = p0 + avail;
 
-                // 入力キャッチャ（ドラッグをこのアイテムが専有）
-                ImVec2 p0 = ImGui::GetCursorScreenPos();
-                ImVec2 p1 = ImVec2(p0.x + avail.x, p0.y + avail.y);
                 ImGui::InvisibleButton("##SceneInputCatcher", avail,
                     ImGuiButtonFlags_MouseButtonLeft |
                     ImGuiButtonFlags_MouseButtonRight |
                     ImGuiButtonFlags_MouseButtonMiddle);
 
-                // Hover / Focus
-                ctx.sceneViewportSize = avail;
                 ctx.sceneHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
                 ctx.sceneFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
                 EditorInterop::SetSceneHovered(ctx.sceneHovered);
@@ -234,41 +254,23 @@ void ImGuiLayer::BuildDockAndWindows(EditorContext& ctx)
 
                 if (ctx.sceneTexId && ctx.sceneRTWidth > 0 && ctx.sceneRTHeight > 0)
                 {
-                    // 背景を塗る（レターボックス/ピラーボックス用）
-                    dl->AddRectFilled(p0, p1, IM_COL32(40, 40, 40, 255));
-
-                    // === Fit（アスペクト維持で全体が見える）＋中央配置 ===
-                    const float texAspect = (float)ctx.sceneRTWidth / (float)ctx.sceneRTHeight;
-                    float w = avail.x, h = avail.y;
-                    if (w / h > texAspect) { w = h * texAspect; }
-                    else { h = w / texAspect; }
-
-                    ImVec2 size(w, h);
-                    ImVec2 center = ImVec2((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f);
-                    ImVec2 q0 = ImVec2(center.x - size.x * 0.5f, center.y - size.y * 0.5f);
-                    ImVec2 q1 = ImVec2(center.x + size.x * 0.5f, center.y + size.y * 0.5f);
-
-                    // テクスチャは全面 UV（0..1）のまま
-                    dl->AddImage(ctx.sceneTexId, q0, q1, ImVec2(0, 0), ImVec2(1, 1));
-
-                    // （デバッグ）右下に解像度表示したい場合
-                    // char txt[64];
-                    // snprintf(txt, sizeof(txt), "%ux%u (fit)", ctx.sceneRTWidth, ctx.sceneRTHeight);
-                    // ImVec2 ts = ImGui::CalcTextSize(txt);
-                    // ImVec2 pad(6,4);
-                    // ImVec2 r0 = ImVec2(p1.x - ts.x - 2*pad.x, p1.y - ts.y - 2*pad.y);
-                    // dl->AddRectFilled(r0, p1, IM_COL32(0,0,0,130), 6.f);
-                    // dl->AddText(ImVec2(r0.x+pad.x, r0.y+pad.y), IM_COL32_WHITE, txt);
+                    // ★ 表示は常に全面 Fill（引き伸ばし表示じゃなく、後述の再投影で歪みを回避）
+                    AddImage_NoEdge(dl, ctx.sceneTexId, p0, p1,
+                        (int)ctx.sceneRTWidth, (int)ctx.sceneRTHeight);
                 }
                 else
                 {
-                    dl->AddRectFilled(p0, p1, IM_COL32(40, 40, 40, 255));
-                    ImGui::SetCursorScreenPos(ImVec2(p0.x + 6, p0.y + 6));
+                    ImGui::SetCursorScreenPos(p0 + ImVec2(6, 6));
                     ImGui::TextDisabled("Scene View (no SRV set)");
                 }
+
+                // ★ ここが重要：RTに要求するサイズは “ウィンドウ実寸の偶数スナップ”
+                auto evenf = [](float v) { int i = (int)v; i &= ~1; if (i < 2) i = 2; return (float)i; };
+                ctx.sceneViewportSize = ImVec2(evenf(avail.x), evenf(avail.y));
             }
             ImGui::End();
-            ImGui::PopStyleVar();
+
+            ImGui::PopStyleVar(3);
         }
 
 
@@ -334,8 +336,7 @@ void ImGuiLayer::BuildDockAndWindows(EditorContext& ctx)
                     ImVec2 q0 = ImVec2(center.x - size.x * 0.5f, center.y - size.y * 0.5f);
                     ImVec2 q1 = ImVec2(center.x + size.x * 0.5f, center.y + size.y * 0.5f);
 
-                    // テクスチャは全面UV（0..1）のまま
-                    dl->AddImage(ctx.gameTexId, q0, q1, ImVec2(0, 0), ImVec2(1, 1));
+                    AddImage_NoEdge(dl, ctx.gameTexId, q0, q1, (int)ctx.gameRTWidth, (int)ctx.gameRTHeight);
 
                     // 右下にScale表示
                     char buf[32];

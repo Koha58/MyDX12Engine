@@ -189,6 +189,12 @@
     <ClCompile Include="Graphics\D3D12\Renderer\SceneRenderer.cpp">
       <Filter>ソース ファイル\Graphics\D3D12\Renderer</Filter>
     </ClCompile>
+    <ClCompile Include="Graphics\D3D12\Renderer\FrameScheduler.cpp">
+      <Filter>ソース ファイル\Graphics\D3D12\Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\D3D12\Renderer\Viewports.cpp">
+      <Filter>ソース ファイル\Graphics\D3D12\Renderer</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Imgui\imconfig.h">
@@ -288,6 +294,12 @@
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="Graphics\D3D12\Renderer\SceneRenderer.h">
+      <Filter>ヘッダー ファイル\Graphics\D3D12\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\D3D12\Renderer\FrameScheduler.h">
+      <Filter>ヘッダー ファイル\Graphics\D3D12\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\D3D12\Renderer\Viewports.h">
       <Filter>ヘッダー ファイル\Graphics\D3D12\Renderer</Filter>
     </ClInclude>
   </ItemGroup>

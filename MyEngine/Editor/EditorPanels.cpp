@@ -7,6 +7,7 @@
 #include "imgui_impl_dx12.h"
 #include "imgui_internal.h"
 #include <string>
+#include <cmath>
 
 namespace
 {
@@ -132,4 +133,29 @@ namespace EditorPanels
             ImGui::TextDisabled("No selection");
         }
     }
+
+    void DrawViewportTextureNoEdge(ImTextureID tex, int texW, int texH, ImVec2 wantSize)
+    {
+        if (!tex || texW <= 0 || texH <= 0) return;
+
+        // 表示サイズは整数にスナップ（floatキャスト or floorf）
+        ImVec2 size(
+            static_cast<float>(std::floor(wantSize.x)),
+            static_cast<float>(std::floor(wantSize.y))
+        );
+        // もしくは：ImVec2 size(std::floorf(wantSize.x), std::floorf(wantSize.y));
+
+        // 半テクセルUVでにじみ防止
+        const float epsU = 0.5f / static_cast<float>(texW);
+        const float epsV = 0.5f / static_cast<float>(texH);
+        ImVec2 uv0(epsU, epsV);
+        ImVec2 uv1(1.0f - epsU, 1.0f - epsV);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        ImGui::Image(tex, size, uv0, uv1);
+        ImGui::PopStyleVar(3);
+    }
+
 }

@@ -21,11 +21,15 @@
 // 下位モジュール
 #include "Core/DeviceResources.h"           // デバイス/スワップチェイン
 #include "Core/FrameResources.h"            // フレームリング（Upload CB 等）
+#include "Core/GpuGarbage.h" 
 #include "Pipeline/PipelineStateBuilder.h"  // PipelineSet 定義
 #include "Editor/EditorContext.h"           // エディタ UI 受け渡し
 #include "Editor/ImGuiLayer.h"              // ImGui 初期化/描画
-#include "Core/RenderTarget.h"              // オフスクリーンRT管理
 #include "Core/GpuGarbage.h"                // 遅延破棄キュー
+
+// 新規：分離したユーティリティ
+#include "Renderer/FrameScheduler.h"
+#include "Renderer/Viewports.h"
 
 class MeshRendererComponent;
 
@@ -56,66 +60,36 @@ public:
 
 private:
     // ========= 基本リソース =========
-    std::unique_ptr<DeviceResources>                  m_dev;
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_cmd;
-    Microsoft::WRL::ComPtr<ID3D12Fence>               m_fence;
-    HANDLE                                            m_fenceEvent = nullptr;
-    UINT64                                            m_nextFence = 0;
+    std::unique_ptr<DeviceResources>        m_dev;
+    Microsoft::WRL::ComPtr<ID3D12Fence>     m_fence;
+    HANDLE                                  m_fenceEvent = nullptr;
+    UINT64                                  m_nextFence = 0; // WaitForGPU 用（FrameScheduler とは別）
 
-    FrameResources                                    m_frames;
-    PipelineSet                                       m_pipe;
-    std::unique_ptr<ImGuiLayer>                       m_imgui;
+    FrameResources                          m_frames;
+    PipelineSet                             m_pipe;
+    std::unique_ptr<ImGuiLayer>             m_imgui;
 
     // 高レベル参照
-    std::shared_ptr<Scene>                            m_CurrentScene;
-    std::shared_ptr<CameraComponent>                  m_Camera;
+    std::shared_ptr<Scene>                  m_CurrentScene;
+    std::shared_ptr<CameraComponent>        m_Camera;
 
     // Editor 状態
-    bool                                              m_IsEditor = true;
-    std::weak_ptr<GameObject>                         m_Selected;
+    bool                                    m_IsEditor = true;
+    std::weak_ptr<GameObject>               m_Selected;
 
     // 統計
-    UINT                                              m_frameCount = 0;
+    UINT                                    m_frameCount = 0;
 
-    // ========= オフスクリーン（RenderTarget化） =========
-    RenderTarget                                      m_sceneRT;   // エディタのSceneビュー描画先
-    RenderTarget                                      m_gameRT;    // 固定カメラのGameビュー描画先
-    UINT                                              m_pendingSceneRTW = 0;
-    UINT                                              m_pendingSceneRTH = 0;
+    // ========= スケジューラ & ビューポート =========
+    FrameScheduler                          m_scheduler;
+    Viewports                               m_viewports;
+
+    // 共有のシーンレンダラー（ルートシグネチャ/CBリングに接続）
+    SceneRenderer                           m_sceneRenderer;
 
     // ImGui SRVのベーススロット（フレームごとに使い分け）
-    static constexpr UINT                             kSceneSrvBase = 16;
-    static constexpr UINT                             kGameSrvBase = 32;
+    static constexpr UINT kSceneSrvBase = 16;
+    static constexpr UINT kGameSrvBase = 32;
 
-    // Sceneの“基準射影”（水平FOV基準）を保持
-    DirectX::XMFLOAT4X4 m_sceneProjInit{};
-    bool                m_sceneProjCaptured = false;
-
-
-    // ========= Game用：初回にSceneカメラを固定 =========
-    bool                                              m_gameCamFrozen = false;
-    DirectX::XMFLOAT4X4                               m_gameViewInit{};
-    DirectX::XMFLOAT4X4                               m_gameProjInit{};
-    float                                             m_gameFrozenAspect = 1.0f;
-
-    // ========= 遅延破棄キュー =========
-    GpuGarbageQueue                                   m_garbage;
-
-    // Sceneビューのデバウンス用
-    UINT                                              m_wantSceneW = 0, m_wantSceneH = 0;
-    int                                               m_sceneSizeStable = 0;
-
-    // 内部ユーティリティ
-    void RequestSceneRTResize(UINT w, UINT h) { m_pendingSceneRTW = w; m_pendingSceneRTH = h; }
-
-    //// ===== 共通描画パス(1カメラ→1RT) =====
-    //struct CameraMatrices
-    //{
-    //    DirectX::XMMATRIX view;
-    //    DirectX::XMMATRIX proj;
-    //};
-
-    //void DrawSceneToRT(RenderTarget& rt, const CameraMatrices& cam, UINT cbBase);
-
-    SceneRenderer m_sceneRenderer;
+    GpuGarbageQueue m_garbage;
 };
