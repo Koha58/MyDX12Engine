@@ -26,5 +26,7 @@ struct EditorContext {
 
     std::function<void()> DrawInspector;
     std::function<void()> DrawHierarchy;
+
+    bool sceneResizing = false;
 };
 

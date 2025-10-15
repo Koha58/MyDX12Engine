@@ -225,6 +225,7 @@ void ImGuiLayer::BuildDockAndWindows(EditorContext& ctx)
     {
         // ===== Scene =====
         {
+            // 親の枠と余白を殺す（←ここが残っていると1pxの縁が出ます）
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
             ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
@@ -232,10 +233,18 @@ void ImGuiLayer::BuildDockAndWindows(EditorContext& ctx)
             const ImGuiWindowFlags sceneFlags =
                 ImGuiWindowFlags_NoScrollbar |
                 ImGuiWindowFlags_NoScrollWithMouse |
-                ImGuiWindowFlags_NoDecoration;
+                ImGuiWindowFlags_NoCollapse;
 
             if (ImGui::Begin("Scene", nullptr, sceneFlags))
             {
+                // 子は背景・枠なしで全面キャッチ＆描画
+                ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
+                ImGuiWindowFlags childFlags =
+                    ImGuiWindowFlags_NoScrollbar |
+                    ImGuiWindowFlags_NoScrollWithMouse |
+                    ImGuiWindowFlags_NoBackground; // 子の背景も描かない
+                ImGui::BeginChild("SceneCanvas", ImVec2(0, 0), false, childFlags);
+
                 ImVec2 avail = ImFloor(ImGui::GetContentRegionAvail());
                 ImVec2 p0 = ImFloor(ImGui::GetCursorScreenPos());
                 ImVec2 p1 = p0 + avail;
@@ -251,27 +260,44 @@ void ImGuiLayer::BuildDockAndWindows(EditorContext& ctx)
                 EditorInterop::SetSceneFocused(ctx.sceneFocused);
 
                 ImDrawList* dl = ImGui::GetWindowDrawList();
+                // 背景は自前でフラット塗り（子は NoBackground なので二重描画にならない）
+                dl->AddRectFilled(p0, p1, IM_COL32(30, 30, 30, 255));
 
                 if (ctx.sceneTexId && ctx.sceneRTWidth > 0 && ctx.sceneRTHeight > 0)
                 {
-                    // ★ 表示は常に全面 Fill（引き伸ばし表示じゃなく、後述の再投影で歪みを回避）
-                    AddImage_NoEdge(dl, ctx.sceneTexId, p0, p1,
+                    const float texAspect = (float)ctx.sceneRTWidth / (float)ctx.sceneRTHeight;
+                    const float winAspect = (avail.y > 0.0f) ? (avail.x / avail.y) : texAspect;
+                    float w, h;
+                    if (winAspect > texAspect) { w = avail.x; h = w / texAspect; }
+                    else { h = avail.y; w = h * texAspect; }
+
+                    auto evenf = [](float v) { int i = (int)v; i &= ~1; if (i < 2)i = 2; return (float)i; };
+                    w = evenf(w); h = evenf(h);
+
+                    ImVec2 size(w, h);
+                    ImVec2 center((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f);
+                    ImVec2 q0(center.x - size.x * 0.5f, center.y - size.y * 0.5f);
+                    ImVec2 q1(center.x + size.x * 0.5f, center.y + size.y * 0.5f);
+
+                    AddImage_NoEdge(dl, ctx.sceneTexId, ImFloor(q0), ImFloor(q1),
                         (int)ctx.sceneRTWidth, (int)ctx.sceneRTHeight);
                 }
-                else
-                {
+                else {
                     ImGui::SetCursorScreenPos(p0 + ImVec2(6, 6));
                     ImGui::TextDisabled("Scene View (no SRV set)");
                 }
 
-                // ★ ここが重要：RTに要求するサイズは “ウィンドウ実寸の偶数スナップ”
-                auto evenf = [](float v) { int i = (int)v; i &= ~1; if (i < 2) i = 2; return (float)i; };
-                ctx.sceneViewportSize = ImVec2(evenf(avail.x), evenf(avail.y));
+                auto evenf_sz = [](float v) { int i = (int)v; i &= ~1; if (i < 2)i = 2; return (float)i; };
+                ctx.sceneViewportSize = ImVec2(evenf_sz(avail.x), evenf_sz(avail.y));
+
+                ImGui::EndChild();
+                ImGui::PopStyleVar(); // ChildBorderSize
             }
             ImGui::End();
 
-            ImGui::PopStyleVar(3);
+            ImGui::PopStyleVar(3); // WindowPadding, WindowBorderSize, WindowRounding
         }
+
 
 
         // ===== Game =====

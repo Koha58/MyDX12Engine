@@ -142,6 +142,8 @@
     <ClCompile Include="Graphics\D3D12\Debug\DxDebug.cpp" />
     <ClCompile Include="Graphics\D3D12\Pipeline\PipelineStateBuilder.cpp" />
     <ClCompile Include="Graphics\D3D12\Renderer\FrameScheduler.cpp" />
+    <ClCompile Include="Graphics\D3D12\Renderer\Presenter.cpp" />
+    <ClCompile Include="Graphics\D3D12\Renderer\SceneLayer.cpp" />
     <ClCompile Include="Graphics\D3D12\Renderer\SceneRenderer.cpp" />
     <ClCompile Include="Graphics\D3D12\Renderer\Viewports.cpp" />
     <ClCompile Include="Graphics\D3D12\Upload\MeshUploader.cpp" />
@@ -175,9 +177,12 @@
     <ClInclude Include="Graphics\D3D12\Core\FrameResources.h" />
     <ClInclude Include="Graphics\D3D12\Core\GpuGarbage.h" />
     <ClInclude Include="Graphics\D3D12\Core\RenderTarget.h" />
+    <ClInclude Include="Graphics\D3D12\Debug\DebugHr.h" />
     <ClInclude Include="Graphics\D3D12\Debug\DxDebug.h" />
     <ClInclude Include="Graphics\D3D12\Pipeline\PipelineStateBuilder.h" />
     <ClInclude Include="Graphics\D3D12\Renderer\FrameScheduler.h" />
+    <ClInclude Include="Graphics\D3D12\Renderer\Presenter.h" />
+    <ClInclude Include="Graphics\D3D12\Renderer\SceneLayer.h" />
     <ClInclude Include="Graphics\D3D12\Renderer\SceneRenderer.h" />
     <ClInclude Include="Graphics\D3D12\Renderer\Viewports.h" />
     <ClInclude Include="Graphics\D3D12\Upload\MeshUploader.h" />

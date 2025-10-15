@@ -2,6 +2,17 @@
 #include "d3dx12.h"
 #include "Editor/ImGuiLayer.h" 
 
+// RenderTarget.cpp の includes のすぐ下あたりに追加
+#include <sstream>
+
+static void RT_LogPtr(const char* tag, ID3D12Resource* color, ID3D12Resource* depth)
+{
+    std::ostringstream oss;
+    oss << "[RT][" << tag << "] color=" << color << " depth=" << depth << "\n";
+    OutputDebugStringA(oss.str().c_str());
+}
+
+
 #ifndef DX_CALL
 #define DX_CALL(x) do {                                           \
     HRESULT _hr = (x);                                            \
@@ -67,6 +78,8 @@ bool RenderTarget::Create(ID3D12Device* dev, const RenderTargetDesc& d)
     if (m_depth) m_depth->SetName(L"RenderTarget.Depth");
 #endif
 
+    RT_LogPtr("Create", m_color.Get(), m_depth.Get());
+
     m_imguiTexId = 0;
     return true;
 }
@@ -74,21 +87,23 @@ bool RenderTarget::Create(ID3D12Device* dev, const RenderTargetDesc& d)
 
 bool RenderTarget::Resize(ID3D12Device* dev, UINT w, UINT h)
 {
-    if (w == 0 || h == 0) return false;          // ★追加
+    if (w == 0 || h == 0) return false;
     if (w == m_desc.width && h == m_desc.height) return false;
 
+    RT_LogPtr("Resize.Begin", m_color.Get(), m_depth.Get()); // ★追加
     Release();
     m_desc.width = w; m_desc.height = h;
-    return Create(dev, m_desc);
+    bool ok = Create(dev, m_desc);
+    RT_LogPtr(ok ? "Resize.End.OK" : "Resize.End.FAIL", m_color.Get(), m_depth.Get()); // ★追加
+    return ok;
 }
+
 
 
 void RenderTarget::Release()
 {
-    // ImGuiのSRVは外部ヒープ管理なので、ここではハンドルだけ忘れる
     m_imguiTexId = 0;
 
-    // in-flight 回避は呼び出し側（必要なら WaitForGPU）で担保すること
     m_depth.Reset();
     m_dsvHeap.Reset();
 
@@ -98,7 +113,11 @@ void RenderTarget::Release()
     m_rtv = {};
     m_dsv = {};
     m_colorState = D3D12_RESOURCE_STATE_COMMON;
+
+    // ★最後に“解放後”のゼロ状態を出す（どの瞬間に空になったかが分かる）
+    RT_LogPtr("Release", m_color.Get(), m_depth.Get());
 }
+
 
 
 void RenderTarget::TransitionToRT(ID3D12GraphicsCommandList* cmd)
@@ -107,7 +126,7 @@ void RenderTarget::TransitionToRT(ID3D12GraphicsCommandList* cmd)
     {
         return;
     }
-
+    RT_LogPtr("TransitionToRT", m_color.Get(), m_depth.Get()); // ★追加
     auto b = CD3DX12_RESOURCE_BARRIER::Transition(m_color.Get(), m_colorState, D3D12_RESOURCE_STATE_RENDER_TARGET);
     cmd->ResourceBarrier(1, &b);
     m_colorState = D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -116,6 +135,7 @@ void RenderTarget::TransitionToRT(ID3D12GraphicsCommandList* cmd)
 void RenderTarget::TransitionToSRV(ID3D12GraphicsCommandList* cmd)
 {
     if (m_colorState == D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) return;
+    RT_LogPtr("TransitionToSRV", m_color.Get(), m_depth.Get()); // ★追加
     auto b = CD3DX12_RESOURCE_BARRIER::Transition(
         m_color.Get(), m_colorState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE); // ★fromに実状態
     cmd->ResourceBarrier(1, &b);
@@ -125,11 +145,13 @@ void RenderTarget::TransitionToSRV(ID3D12GraphicsCommandList* cmd)
 
 void RenderTarget::Bind(ID3D12GraphicsCommandList* cmd)
 {
+    RT_LogPtr("Bind", m_color.Get(), m_depth.Get()); // ★追加
     cmd->OMSetRenderTargets(1, &m_rtv, FALSE, m_depth ? &m_dsv : nullptr);
 }
 
 void RenderTarget::Clear(ID3D12GraphicsCommandList* cmd)
 {
+    RT_LogPtr("Clear", m_color.Get(), m_depth.Get()); // ★追加
     cmd->ClearRenderTargetView(m_rtv, m_desc.clearColor, 0, nullptr);
     if (m_depth) cmd->ClearDepthStencilView(m_dsv, D3D12_CLEAR_FLAG_DEPTH, m_desc.clearDepth, 0, 0, nullptr);
 }
@@ -138,12 +160,16 @@ ImTextureID RenderTarget::EnsureImGuiSRV(ImGuiLayer* imgui, UINT slot) const
 {
     if (!m_imguiTexId) {
         m_imguiTexId = imgui->CreateOrUpdateTextureSRV(m_color.Get(), m_desc.colorFormat, slot);
+        RT_LogPtr("ImGuiSRV.Create", m_color.Get(), m_depth.Get()); // ★追加
     }
     return m_imguiTexId; // ★常に返す（未定義動作の除去）
 }
 
 RenderTargetHandles RenderTarget::Detach()
 {
+    // ★detach する“旧 RT”のアドレスを出す
+    RT_LogPtr("Detach.Before", m_color.Get(), m_depth.Get()); // ★追加
+
     RenderTargetHandles out{};
     out.color = std::move(m_color);
     out.depth = std::move(m_depth);
@@ -152,13 +178,15 @@ RenderTargetHandles RenderTarget::Detach()
     out.rtv = m_rtv;
     out.dsv = m_dsv;
 
-    // 内部状態をからっぽに
     m_rtv = {};
     m_dsv = {};
     m_imguiTexId = 0;
     m_colorState = D3D12_RESOURCE_STATE_COMMON;
     m_desc.width = m_desc.height = 0;
 
-    return out; // out の ComPtr が作用域を抜けたタイミングで解放される
+    // ★detach した“旧 RT”のアドレスを再度（out 側）
+    RT_LogPtr("Detach.After(out)", out.color.Get(), out.depth.Get()); // ★追加
+    return out;
 }
+
 

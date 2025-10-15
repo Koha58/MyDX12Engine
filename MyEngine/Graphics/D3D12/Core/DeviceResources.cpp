@@ -1,7 +1,36 @@
 #include "DeviceResources.h"
 #include "d3dx12.h"
+#include <cassert>
+#include "Debug/DebugHr.h"
+// （デバッグ強化したいなら）#include <dxgidebug.h> と dxguid.lib をリンク
 
 using Microsoft::WRL::ComPtr;
+
+// ---- mini logger -------------------------------------------------
+#include <sstream>
+static void DR_Log(const char* s) { OutputDebugStringA(s); OutputDebugStringA("\n"); }
+static void DR_LogHR(HRESULT hr, const char* where) {
+    if (FAILED(hr)) {
+        std::ostringstream oss;
+        oss << "[DR][HR] 0x" << std::hex << hr << " @ " << where;
+        OutputDebugStringA(oss.str().c_str()); OutputDebugStringA("\n");
+    }
+    else {
+        std::ostringstream oss;
+        oss << "[DR] OK @ " << where;
+        OutputDebugStringA(oss.str().c_str()); OutputDebugStringA("\n");
+    }
+}
+
+
+// 重要：既定フォーマットを初期化（未初期化由来の失敗を防止）
+DeviceResources::DeviceResources()
+{
+    m_rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    m_dsvFormat = DXGI_FORMAT_D32_FLOAT;
+    m_rtvStride = 0;
+    m_width = m_height = 0;
+}
 
 DeviceResources::~DeviceResources()
 {
@@ -13,51 +42,75 @@ DeviceResources::~DeviceResources()
 
 bool DeviceResources::Initialize(HWND hwnd, UINT width, UINT height, UINT frameCount)
 {
-    m_width = width;
-    m_height = height;
+    DR_Log("[DR] Initialize begin");
+    m_width = width; m_height = height;
 
-    if (!CreateDevice()) return false;
-    if (!CreateCommandQueue()) return false;
-    if (!CreateSwapChain(hwnd, width, height, frameCount)) return false;
-    if (!CreateRTVs(frameCount)) return false;
-    if (!CreateDSV(width, height)) return false;
+    if (!CreateDevice()) { DR_Log("[DR] CreateDevice FAILED"); return false; }
+    DR_Log("[DR] CreateDevice OK");
+    if (!CreateCommandQueue()) { DR_Log("[DR] CreateCommandQueue FAILED"); return false; }
+    DR_Log("[DR] CreateCommandQueue OK");
+    if (!CreateSwapChain(hwnd, width, height, frameCount)) { DR_Log("[DR] CreateSwapChain FAILED"); return false; }
+    DR_Log("[DR] CreateSwapChain OK");
+    if (!CreateRTVs(frameCount)) { DR_Log("[DR] CreateRTVs FAILED"); return false; }
+    DR_Log("[DR] CreateRTVs OK");
+    if (!CreateDSV(width, height)) { DR_Log("[DR] CreateDSV FAILED"); return false; }
+    DR_Log("[DR] CreateDSV OK");
 
+    DR_Log("[DR] Initialize end OK");
     return true;
 }
 
+
 void DeviceResources::Resize(UINT width, UINT height)
 {
-    if (width == 0 || height == 0) return;
-    if (!m_device || !m_swapChain) return;
-
-    m_width = width;
-    m_height = height;
-
-    ReleaseSizeDependentResources();
+    {
+        std::ostringstream oss;
+        oss << "[DR] Resize(" << width << "," << height << ")";
+        DR_Log(oss.str().c_str());
+    }
+    if (width == 0 || height == 0 || !m_device || !m_swapChain) { DR_Log("[DR] Resize early return"); return; }
 
     DXGI_SWAP_CHAIN_DESC1 desc{};
-    m_swapChain->GetDesc1(&desc);
-    m_swapChain->ResizeBuffers((UINT)m_backBuffers.size(), width, height, desc.Format, desc.Flags);
+    HRESULT hr = m_swapChain->GetDesc1(&desc);
+    DR_LogHR(hr, "GetDesc1"); if (FAILED(hr)) return;
 
-    CreateRTVs((UINT)m_backBuffers.size());
-    CreateDSV(width, height);
+    const UINT bufferCount = desc.BufferCount ? desc.BufferCount : (UINT)m_backBuffers.size();
+    if (bufferCount == 0) { DR_Log("[DR] Resize bufferCount==0"); return; }
+
+    ReleaseSizeDependentResources();
+    hr = m_swapChain->ResizeBuffers(bufferCount, width, height, desc.Format, desc.Flags);
+    DR_LogHR(hr, "ResizeBuffers"); if (FAILED(hr)) return;
+
+    if (!CreateRTVs(bufferCount)) { DR_Log("[DR] CreateRTVs FAILED after Resize"); return; }
+    if (!CreateDSV(width, height)) { DR_Log("[DR] CreateDSV FAILED after Resize"); return; }
+    DR_Log("[DR] Resize end OK");
 }
+
+
 
 void DeviceResources::Present(UINT syncInterval)
 {
     if (!m_swapChain) return;
-    m_swapChain->Present(syncInterval, 0);
+    HRESULT hr = m_swapChain->Present(syncInterval, 0);
+    DR_LogHR(hr, "Present");
 }
+
 
 D3D12_CPU_DESCRIPTOR_HANDLE DeviceResources::GetRTVHandle(UINT index) const
 {
-    D3D12_CPU_DESCRIPTOR_HANDLE h = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+    assert(m_rtvHeap && m_rtvStride != 0 && "RTV heap is not ready");
+    D3D12_CPU_DESCRIPTOR_HANDLE h{};
+    if (!m_rtvHeap || m_rtvStride == 0) return h;
+
+    h = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
     h.ptr += SIZE_T(index) * SIZE_T(m_rtvStride);
     return h;
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE DeviceResources::GetDSVHandle() const
 {
+    D3D12_CPU_DESCRIPTOR_HANDLE h{};
+    if (!m_dsvHeap) return h;
     return m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
 }
 
@@ -65,13 +118,14 @@ bool DeviceResources::CreateDevice()
 {
     UINT flags = 0;
 #ifdef _DEBUG
-    if (ComPtr<ID3D12Debug> dbg; SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&dbg))))
+    if (Microsoft::WRL::ComPtr<ID3D12Debug> dbg; SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&dbg))))
         dbg->EnableDebugLayer(), flags = DXGI_CREATE_FACTORY_DEBUG;
 #endif
-    ComPtr<IDXGIFactory4> factory;
-    if (FAILED(CreateDXGIFactory2(flags, IID_PPV_ARGS(&factory)))) return false;
 
-    // pick hardware adapter
+    Microsoft::WRL::ComPtr<IDXGIFactory4> factory;
+    HRB(CreateDXGIFactory2(flags, IID_PPV_ARGS(&factory))); // ★ここだけまず置き換え
+
+    // ハードウェアアダプタを選択
     ComPtr<IDXGIAdapter1> adapter;
     for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
         DXGI_ADAPTER_DESC1 desc{};
@@ -94,48 +148,62 @@ bool DeviceResources::CreateCommandQueue()
 
 bool DeviceResources::CreateSwapChain(HWND hwnd, UINT width, UINT height, UINT frameCount)
 {
-    ComPtr<IDXGIFactory4> factory;
+    DR_Log("[DR] CreateSwapChain begin");
+    Microsoft::WRL::ComPtr<IDXGIFactory4> factory;
     UINT flags = 0;
 #ifdef _DEBUG
     flags = DXGI_CREATE_FACTORY_DEBUG;
 #endif
-    if (FAILED(CreateDXGIFactory2(flags, IID_PPV_ARGS(&factory)))) return false;
+    HRESULT hr = CreateDXGIFactory2(flags, IID_PPV_ARGS(&factory));
+    DR_LogHR(hr, "CreateDXGIFactory2"); if (FAILED(hr)) return false;
 
     DXGI_SWAP_CHAIN_DESC1 sc{};
     sc.BufferCount = frameCount;
-    sc.Width = width;
-    sc.Height = height;
+    sc.Width = width; sc.Height = height;
     sc.Format = m_rtvFormat;
     sc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     sc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-    sc.SampleDesc = { 1, 0 };
+    sc.SampleDesc = { 1,0 };
 
-    ComPtr<IDXGISwapChain1> sc1;
-    if (FAILED(factory->CreateSwapChainForHwnd(m_queue.Get(), hwnd, &sc, nullptr, nullptr, &sc1)))
-        return false;
-    if (FAILED(sc1.As(&m_swapChain))) return false;
+    Microsoft::WRL::ComPtr<IDXGISwapChain1> sc1;
+    hr = factory->CreateSwapChainForHwnd(m_queue.Get(), hwnd, &sc, nullptr, nullptr, &sc1);
+    DR_LogHR(hr, "CreateSwapChainForHwnd"); if (FAILED(hr)) return false;
+
+    hr = sc1.As(&m_swapChain);
+    DR_LogHR(hr, "As IDXGISwapChain4"); if (FAILED(hr)) return false;
 
     factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
+    DR_Log("[DR] CreateSwapChain end OK");
     return true;
 }
 
+
 bool DeviceResources::CreateRTVs(UINT frameCount)
 {
+    // 残骸をクリア
     m_backBuffers.clear();
     m_backBuffers.resize(frameCount);
+    m_rtvHeap.Reset();
+    m_rtvStride = 0;
 
     D3D12_DESCRIPTOR_HEAP_DESC desc{};
     desc.NumDescriptors = frameCount;
     desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-    if (FAILED(m_device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_rtvHeap))))
+    if (FAILED(m_device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_rtvHeap)))) {
+        m_backBuffers.clear();
         return false;
+    }
 
     m_rtvStride = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE h(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
     for (UINT i = 0; i < frameCount; ++i) {
-        if (FAILED(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_backBuffers[i]))))
+        if (FAILED(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_backBuffers[i])))) {
+            m_backBuffers.clear();
+            m_rtvHeap.Reset();
+            m_rtvStride = 0;
             return false;
+        }
         m_device->CreateRenderTargetView(m_backBuffers[i].Get(), nullptr, h);
         h.Offset(1, m_rtvStride);
     }
@@ -144,6 +212,9 @@ bool DeviceResources::CreateRTVs(UINT frameCount)
 
 bool DeviceResources::CreateDSV(UINT width, UINT height)
 {
+    m_dsvHeap.Reset();
+    m_depth.Reset();
+
     D3D12_DESCRIPTOR_HEAP_DESC dsv{};
     dsv.NumDescriptors = 1;
     dsv.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
@@ -174,7 +245,9 @@ bool DeviceResources::CreateDSV(UINT width, UINT height)
 void DeviceResources::ReleaseSizeDependentResources()
 {
     for (auto& bb : m_backBuffers) bb.Reset();
+    m_backBuffers.clear();
     m_depth.Reset();
     m_rtvHeap.Reset();
     m_dsvHeap.Reset();
+    m_rtvStride = 0;
 }

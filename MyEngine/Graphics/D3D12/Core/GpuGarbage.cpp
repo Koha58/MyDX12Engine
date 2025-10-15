@@ -1,24 +1,37 @@
 #include "Core/GpuGarbage.h"
-#include "Core/RenderTarget.h"      // RenderTargetHandles の中身を使う
+#include "Core/RenderTarget.h" // RenderTargetHandles の定義が必要
+#include <utility>
 
-void GpuGarbageQueue::Enqueue(UINT64 fenceValue, std::function<void()> deleter) {
-    m_items.push_back({ fenceValue, std::move(deleter) });
+static bool IsEmpty(const RenderTargetHandles& h) {
+    return !h.color && !h.depth && !h.rtvHeap && !h.dsvHeap;
 }
 
-void GpuGarbageQueue::Collect(ID3D12Fence* fenceObj) {
+void GpuGarbageQueue::EnqueueRT(UINT64 fenceValue, RenderTargetHandles&& rt)
+{
+    if (IsEmpty(rt)) return;
+
+    Item item;
+    item.fence = fenceValue;
+    item.rt = std::make_unique<RenderTargetHandles>(std::move(rt)); // 所有権を移す
+    m_rts.push_back(std::move(item));
+}
+
+void GpuGarbageQueue::Collect(ID3D12Fence* fenceObj)
+{
     if (!fenceObj) return;
     const UINT64 done = fenceObj->GetCompletedValue();
-    while (!m_items.empty() && m_items.front().fence <= done) {
-        if (m_items.front().deleter) m_items.front().deleter();
-        m_items.pop_front();
+    while (!m_rts.empty() && m_rts.front().fence <= done) {
+        // unique_ptr がスコープアウトして ComPtr が Release される
+        m_rts.pop_front();
     }
 }
 
-void GpuGarbageQueue::FlushAll() {
-    for (auto& it : m_items) if (it.deleter) it.deleter();
-    m_items.clear();
+void GpuGarbageQueue::FlushAll()
+{
+    m_rts.clear(); // unique_ptr の解放で全部 Release
 }
 
-void EnqueueRenderTarget(GpuGarbageQueue& q, UINT64 fenceValue, RenderTargetHandles&& rt) {
-    q.Enqueue(fenceValue, [h = std::move(rt)]() mutable { (void)h; });
+void EnqueueRenderTarget(GpuGarbageQueue& q, UINT64 fenceValue, RenderTargetHandles&& rt)
+{
+    q.EnqueueRT(fenceValue, std::move(rt));
 }

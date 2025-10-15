@@ -8,6 +8,7 @@
 class DeviceResources
 {
 public:
+    DeviceResources();               // ★ 追加：コンストラクタ宣言
     ~DeviceResources();
 
     bool Initialize(HWND hwnd, UINT width, UINT height, UINT frameCount);
@@ -20,11 +21,11 @@ public:
     ID3D12Resource* GetBackBuffer(UINT index) const { return m_backBuffers[index].Get(); }
     D3D12_CPU_DESCRIPTOR_HANDLE GetRTVHandle(UINT index) const;
     D3D12_CPU_DESCRIPTOR_HANDLE GetDSVHandle() const;
-    DXGI_FORMAT GetRTVFormat() const { return m_rtvFormat; }
-    DXGI_FORMAT GetDSVFormat() const { return m_dsvFormat; }
-    UINT GetCurrentBackBufferIndex() const { return m_swapChain->GetCurrentBackBufferIndex(); }
-    UINT GetWidth()  const { return m_width; }
-    UINT GetHeight() const { return m_height; }
+    DXGI_FORMAT          GetRTVFormat() const { return m_rtvFormat; }
+    DXGI_FORMAT          GetDSVFormat() const { return m_dsvFormat; }
+    UINT                 GetCurrentBackBufferIndex() const { return m_swapChain->GetCurrentBackBufferIndex(); }
+    UINT                 GetWidth()  const { return m_width; }
+    UINT                 GetHeight() const { return m_height; }
 
 private:
     bool CreateDevice();
@@ -43,7 +44,7 @@ private:
     // RTV/DSV
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_dsvHeap;
-    UINT m_rtvStride = 0;
+    UINT        m_rtvStride = 0;
     DXGI_FORMAT m_rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     DXGI_FORMAT m_dsvFormat = DXGI_FORMAT_D32_FLOAT;
 

@@ -63,17 +63,16 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
     if (!BuildLambertPipeline(dev, m_dev->GetRTVFormat(), m_dev->GetDSVFormat(), m_pipe))
         return false;
 
-    // SceneRenderer を結線
-    m_sceneRenderer.Initialize(dev, m_pipe, &m_frames);
+    // ★ SceneLayer を初期化（SceneRenderer + Viewports を内包）
+    //    初期サイズにウィンドウ幅・高さを渡すことでぼやけ防止
+    m_sceneLayer.Initialize(dev, m_dev->GetRTVFormat(), m_dev->GetDSVFormat(),
+        &m_frames, m_pipe, width, height);
 
     // ImGui
     m_imgui = std::make_unique<ImGuiLayer>();
     if (!m_imgui->Initialize(hwnd, dev, m_dev->GetQueue(),
         m_dev->GetRTVFormat(), m_dev->GetDSVFormat(), FrameCount))
         return false;
-
-    // Viewports を初期化（Scene/Game RT 内部管理）
-    m_viewports.Initialize(dev, width, height);
 
     // フレームスケジューラ（フレーム待ち/Present/Signal/遅延破棄）
     m_scheduler.Initialize(m_dev.get(), m_fence.Get(), m_fenceEvent, &m_frames, &m_garbage);
@@ -91,48 +90,47 @@ bool D3D12Renderer::Initialize(HWND hwnd, UINT width, UINT height)
 //==============================================================================
 void D3D12Renderer::Render()
 {
-    // ---- フレーム開始（待ち & Reset & cmd準備）----
     auto begin = m_scheduler.BeginFrame();
     const UINT fi = begin.frameIndex;
     ID3D12GraphicsCommandList* cmd = begin.cmd;
 
-    // Reset 直後なので PSO を明示セット
     cmd->SetPipelineState(m_pipe.pso.Get());
 
-    // ① フレーム冒頭で「前フレームの希望サイズ」を適用（旧RT を遅延破棄へ）
-    RenderTargetHandles deadScene = m_viewports.ApplyPendingResizeIfNeeded(m_dev->GetDevice());
+    // ① 前フレの希望サイズを適用 → 今フレで使うRTを決定
+    RenderTargetHandles deadScene = m_sceneLayer.BeginFrame(m_dev->GetDevice());
 
-    // =====================================================================
-    // ② Scene 用オフスクリーンへ描画（HFOV固定/アスペクト追従は Viewports 側）
-    // =====================================================================
-    if (m_Camera) {
-        m_viewports.RenderScene(cmd, m_sceneRenderer, m_Camera.get(), m_CurrentScene.get(),
-            /*frameIndex=*/fi, /*maxObjects=*/MaxObjects);
+    // ★ 追加：今フレで捨てるものが無い場合は、Viewports に“持ち越し死骸”があれば拾う
+    auto isEmptyRT = [](const RenderTargetHandles& h) noexcept {
+        return !h.color && !h.depth && !h.rtvHeap && !h.dsvHeap;
+        };
+    if (isEmptyRT(deadScene)) {
+        // SceneLayer に下記の薄いAPIを用意しておく：
+        //   RenderTargetHandles SceneLayer::TakeCarryOverDead();
+        RenderTargetHandles carry = m_sceneLayer.TakeCarryOverDead();
+        if (!isEmptyRT(carry)) {
+            deadScene = std::move(carry);
+        }
     }
 
-    // =====================================================================
-    // 1.5) Game 用オフスクリーンへ “固定カメラ” で描画（Scene 同期は Viewports 側）
-    // =====================================================================
-    m_viewports.RenderGame(cmd, m_sceneRenderer, m_CurrentScene.get(),
-        /*frameIndex=*/fi, /*maxObjects=*/MaxObjects);
+    // ② Scene/Game をオフスクリーンへ描画
+    if (m_Camera) {
+        SceneLayerBeginArgs args{};
+        args.device = m_dev->GetDevice();
+        args.cmd = cmd;
+        args.frameIndex = fi;
+        args.scene = m_CurrentScene.get();
+        args.camera = m_Camera.get();
+        m_sceneLayer.Record(args, /*maxObjects=*/MaxObjects);
+    }
 
-    // =====================================================================
     // ③ バックバッファに UI（ImGui）
-    // =====================================================================
     ID3D12Resource* bb = m_dev->GetBackBuffer(fi);
-    auto toRT_bb = CD3DX12_RESOURCE_BARRIER::Transition(
-        bb, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-    cmd->ResourceBarrier(1, &toRT_bb);
-
-    auto rtv = m_dev->GetRTVHandle(fi);
-    cmd->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
-    const float clearBB[4] = { 0.2f, 0.2f, 0.4f, 1.0f };
-    cmd->ClearRenderTargetView(rtv, clearBB, 0, nullptr);
-
-    D3D12_VIEWPORT vpBB{ 0.f, 0.f, (float)m_dev->GetWidth(), (float)m_dev->GetHeight(), 0.f, 1.f };
-    D3D12_RECT     scBB{ 0, 0, (LONG)m_dev->GetWidth(), (LONG)m_dev->GetHeight() };
-    cmd->RSSetViewports(1, &vpBB);
-    cmd->RSSetScissorRects(1, &scBB);
+    PresentTargets pt{};
+    pt.rtv = m_dev->GetRTVHandle(fi);
+    pt.backBuffer = bb;
+    pt.width = m_dev->GetWidth();
+    pt.height = m_dev->GetHeight();
+    m_presenter.Begin(cmd, pt);
 
     static bool s_resetLayout = false;
     static bool s_autoRelayout = false;
@@ -145,61 +143,30 @@ void D3D12Renderer::Render()
     ctx.pRequestResetLayout = &s_resetLayout;
     ctx.pAutoRelayout = &s_autoRelayout;
 
-    // 現在のRTのSRVをUIに渡す（このフレームで使うのは“すでに描いたRT”）
-    m_viewports.FeedToUI(ctx, m_imgui.get(), fi, kSceneSrvBase, kGameSrvBase);
+    m_sceneLayer.FeedToUI(ctx, m_imgui.get(), fi, kSceneSrvBase, kGameSrvBase);
 
-    // UI は EditorPanels に委譲（Renderer から排除）
     ctx.DrawInspector = [&]() { EditorPanels::DrawInspector(m_Selected); };
     ctx.DrawHierarchy = [&]() { EditorPanels::DrawHierarchy(m_CurrentScene.get(), m_Selected); };
 
     m_imgui->NewFrame();
     m_imgui->BuildDockAndWindows(ctx);
 
-    // ④ UI が出した希望サイズは「記録だけ」（このフレームでは作り直さない）
     const float dt = ImGui::GetIO().DeltaTime;
     const UINT wantW = (UINT)std::lroundf(ctx.sceneViewportSize.x);
     const UINT wantH = (UINT)std::lroundf(ctx.sceneViewportSize.y);
     if (wantW > 0 && wantH > 0) {
-        // ヒステリシスと16pxスナップは Viewports 側で処理
-        //m_viewports.RequestSceneResize(wantW, wantH, dt);
+        m_sceneLayer.RequestResize(wantW, wantH, dt);
     }
 
     m_imgui->Render(cmd);
 
-    // ---- RT → PRESENT ----
-    auto toPresent = CD3DX12_RESOURCE_BARRIER::Transition(
-        bb, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-    cmd->ResourceBarrier(1, &toPresent);
+    m_presenter.End(cmd, bb);
 
-    // ---- Submit & Present & Signal & 遅延破棄回収 ----
+    // ④ 今フレーム終了時に“1個だけ”遅延破棄へ（carry-over は Viewports 側で保持）
     m_scheduler.EndFrame(&deadScene);
-
     ++m_frameCount;
 }
 
-//==============================================================================
-// Resize
-//==============================================================================
-// D3D12Renderer::Resize
-void D3D12Renderer::Resize(UINT width, UINT height) noexcept
-{
-    if (width == 0 || height == 0) return;
-
-    // 全フレーム待機（スワップチェイン再作成のため）
-    for (UINT i = 0; i < m_frames.GetCount(); ++i) {
-        auto& fr = m_frames.Get(i);
-        if (fr.fenceValue != 0 && m_fence->GetCompletedValue() < fr.fenceValue) {
-            m_fence->SetEventOnCompletion(fr.fenceValue, m_fenceEvent);
-            WaitForSingleObject(m_fenceEvent, INFINITE);
-        }
-    }
-
-    m_dev->Resize(width, height);
-
-    // SceneRT は UI ビューポートに追従（ここでは何もしない）
-    if (m_Camera)
-        m_Camera->SetAspect(static_cast<float>(width) / static_cast<float>(height));
-}
 
 //==============================================================================
 // Cleanup
@@ -221,8 +188,7 @@ void D3D12Renderer::Cleanup()
 
     ReleaseSceneResources();
 
-    // SceneRenderer の結線を先に切る（この後でフレーム等を破棄するため）
-    m_sceneRenderer.Initialize(nullptr, PipelineSet{}, nullptr);
+    // （SceneRenderer は SceneLayer 内に移したので何もしない）
 
     // 念のため完全待機してから遅延破棄を全回収
     WaitForGPU();
@@ -286,8 +252,8 @@ bool D3D12Renderer::CreateMeshRendererResources(std::shared_ptr<MeshRendererComp
         mr->VertexBuffer->Unmap(0, nullptr);
     }
     mr->VertexBufferView.BufferLocation = mr->VertexBuffer->GetGPUVirtualAddress();
-    mr->VertexBufferView.StrideInBytes = sizeof(Vertex);
-    mr->VertexBufferView.SizeInBytes = vbSize;
+    mr->VertexBufferView.StrideInBytes  = sizeof(Vertex);
+    mr->VertexBufferView.SizeInBytes    = vbSize;
 
     // IB
     const UINT ibSize = static_cast<UINT>(md.Indices.size() * sizeof(uint32_t));
@@ -303,8 +269,8 @@ bool D3D12Renderer::CreateMeshRendererResources(std::shared_ptr<MeshRendererComp
         mr->IndexBuffer->Unmap(0, nullptr);
     }
     mr->IndexBufferView.BufferLocation = mr->IndexBuffer->GetGPUVirtualAddress();
-    mr->IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
-    mr->IndexBufferView.SizeInBytes = ibSize;
+    mr->IndexBufferView.Format         = DXGI_FORMAT_R32_UINT;
+    mr->IndexBufferView.SizeInBytes    = ibSize;
 
     mr->IndexCount = static_cast<UINT>(md.Indices.size());
     return true;
@@ -328,4 +294,29 @@ void D3D12Renderer::ReleaseSceneResources()
     }
     m_Camera.reset();
     m_CurrentScene.reset();
+}
+
+//==============================================================================
+// Resize
+//==============================================================================
+void D3D12Renderer::Resize(UINT width, UINT height) noexcept
+{
+    if (width == 0 || height == 0) return;
+
+    // 全フレーム待機（スワップチェイン再作成のため）
+    for (UINT i = 0; i < m_frames.GetCount(); ++i) {
+        auto& fr = m_frames.Get(i);
+        if (fr.fenceValue != 0 && m_fence->GetCompletedValue() < fr.fenceValue) {
+            m_fence->SetEventOnCompletion(fr.fenceValue, m_fenceEvent);
+            WaitForSingleObject(m_fenceEvent, INFINITE);
+        }
+    }
+
+    // スワップチェインをリサイズ
+    m_dev->Resize(width, height);
+
+    // SceneRT は UIビューポート追従なのでここでは何もしない
+    // カメラのアスペクトだけ更新（従来仕様を維持）
+    if (m_Camera)
+        m_Camera->SetAspect(static_cast<float>(width) / static_cast<float>(height));
 }

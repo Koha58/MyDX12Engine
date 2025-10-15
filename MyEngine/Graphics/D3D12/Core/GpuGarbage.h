@@ -2,24 +2,32 @@
 #include <wrl/client.h>
 #include <d3d12.h>
 #include <deque>
-#include <functional>
+#include <memory>
 #include <cstdint>
 
-// RenderTarget.h 側で定義（ここでは前方宣言だけ）
+// RenderTarget.h は include しない（前方宣言のみ）
 struct RenderTargetHandles;
 
 /** GPU フェンスにぶら下げる遅延破棄キュー */
 class GpuGarbageQueue {
 public:
-    void Enqueue(UINT64 fenceValue, std::function<void()> deleter);
+    // RenderTarget をフェンス到達まで保持して解放
+    void EnqueueRT(UINT64 fenceValue, RenderTargetHandles&& rt);
+    // フェンス completedValue に達したものだけ順に解放
     void Collect(ID3D12Fence* fenceObj);
+    // 即全解放（終了時など）
     void FlushAll();
-    size_t PendingCount() const noexcept { return m_items.size(); }
+
+    size_t PendingCount() const noexcept { return m_rts.size(); }
+
 private:
-    struct Item { UINT64 fence = 0; std::function<void()> deleter; };
-    std::deque<Item> m_items;
+    struct Item {
+        UINT64 fence = 0;
+        // 未完成型をメンバにできないため unique_ptr で保持
+        std::unique_ptr<RenderTargetHandles> rt;
+    };
+    std::deque<Item> m_rts;
 };
 
-/** RenderTarget の旧ハンドルを遅延破棄に積むヘルパ */
+/** 互換ヘルパ（既存呼び出し名を残したい場合に） */
 void EnqueueRenderTarget(GpuGarbageQueue& q, UINT64 fenceValue, RenderTargetHandles&& rt);
-

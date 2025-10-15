@@ -8,6 +8,8 @@ C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\Graphics\D3D12\
 C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\Graphics\D3D12\Debug\DxDebug.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Debug\DxDebug.obj
 C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\Graphics\D3D12\Pipeline\PipelineStateBuilder.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Debug\PipelineStateBuilder.obj
 C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\Graphics\D3D12\Renderer\FrameScheduler.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Debug\FrameScheduler.obj
+C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\Graphics\D3D12\Renderer\Presenter.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Debug\Presenter.obj
+C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\Graphics\D3D12\Renderer\SceneLayer.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Debug\SceneLayer.obj
 C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\Graphics\D3D12\Renderer\SceneRenderer.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Debug\SceneRenderer.obj
 C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\Graphics\D3D12\Renderer\Viewports.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Debug\Viewports.obj
 C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\Graphics\D3D12\Upload\MeshUploader.cpp;C:\Users\owner\OneDrive\ドキュメント\MyDX12Engine\MyEngine\x64\Debug\MeshUploader.obj

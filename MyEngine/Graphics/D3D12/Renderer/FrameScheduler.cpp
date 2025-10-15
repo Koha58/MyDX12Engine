@@ -8,6 +8,7 @@
 #include <d3d12.h>
 #include <algorithm>
 #include <utility>
+#include <cassert>
 
 #include "Core/DeviceResources.h"
 #include "Core/FrameResources.h"
@@ -27,13 +28,19 @@ void FrameScheduler::Initialize(DeviceResources* dev,
     m_garbage = garbage;
 
     // 既に他所でSignalされてる可能性を考慮して completed+1 から開始
-    std::uint64_t completed = (m_fence ? m_fence->GetCompletedValue() : 0);
+    const std::uint64_t completed = (m_fence ? m_fence->GetCompletedValue() : 0);
     m_nextFence = completed + 1;
+
+    // インフライトのフレームインデックス初期化
+    m_inFlightFrameIndex = 0;
 }
 
 FrameScheduler::BeginInfo FrameScheduler::BeginFrame()
 {
-    unsigned fi = m_dev->GetCurrentBackBufferIndex();
+    // ★ この時点のバックバッファインデックスを記録（EndFrameで再取得しない）
+    const unsigned fi = m_dev->GetCurrentBackBufferIndex();
+    m_inFlightFrameIndex = fi;
+
     auto& fr = m_frames->Get(fi);
 
     // 前フレーム完了待ち
@@ -64,7 +71,8 @@ FrameScheduler::BeginInfo FrameScheduler::BeginFrame()
 
 void FrameScheduler::EndFrame(RenderTargetHandles* toDispose)
 {
-    unsigned fi = m_dev->GetCurrentBackBufferIndex();
+    // ★ BeginFrameで記録したインデックスを使う（Present後に取り直さない）
+    const unsigned fi = m_inFlightFrameIndex;
     auto& fr = m_frames->Get(fi);
 
     // Submit & Present
@@ -74,17 +82,19 @@ void FrameScheduler::EndFrame(RenderTargetHandles* toDispose)
     m_dev->Present(1);
 
     // 外部Signalがあっても単調増加を維持
-    std::uint64_t completed = m_fence->GetCompletedValue();
+    const std::uint64_t completed = m_fence->GetCompletedValue();
     m_nextFence = std::max<std::uint64_t>(m_nextFence, completed + 1);
 
-    std::uint64_t sig = m_nextFence++;
+    const std::uint64_t sig = m_nextFence++;
     m_dev->GetQueue()->Signal(m_fence, sig);
+
+    // ★ このフレームのFrameResourceに紐づける
     fr.fenceValue = sig;
 
     // このフレーム完了後に旧RTを破棄
     if (toDispose && (toDispose->color || toDispose->depth || toDispose->rtvHeap || toDispose->dsvHeap)) {
         if (m_garbage) EnqueueRenderTarget(*m_garbage, sig, std::move(*toDispose));
-        *toDispose = {}; // 任意：二重破棄防止
+        *toDispose = {}; // 二重破棄防止
     }
     if (m_garbage) m_garbage->Collect(m_fence);
 }

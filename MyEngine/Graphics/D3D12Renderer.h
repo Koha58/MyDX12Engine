@@ -16,20 +16,20 @@
 #include "Assets/Mesh.h"
 #include "Components/MeshRendererComponent.h"
 #include "SceneConstantBuffer.h"
-#include "Renderer/SceneRenderer.h"
 
 // 下位モジュール
 #include "Core/DeviceResources.h"           // デバイス/スワップチェイン
 #include "Core/FrameResources.h"            // フレームリング（Upload CB 等）
-#include "Core/GpuGarbage.h" 
+#include "Core/GpuGarbage.h"
 #include "Pipeline/PipelineStateBuilder.h"  // PipelineSet 定義
 #include "Editor/EditorContext.h"           // エディタ UI 受け渡し
 #include "Editor/ImGuiLayer.h"              // ImGui 初期化/描画
 #include "Core/GpuGarbage.h"                // 遅延破棄キュー
+#include "Renderer/Presenter.h"
+#include "Renderer/SceneLayer.h"            // ← シーン描画はすべてここに委譲
 
 // 新規：分離したユーティリティ
 #include "Renderer/FrameScheduler.h"
-#include "Renderer/Viewports.h"
 
 class MeshRendererComponent;
 
@@ -80,16 +80,17 @@ private:
     // 統計
     UINT                                    m_frameCount = 0;
 
-    // ========= スケジューラ & ビューポート =========
+    // ========= スケジューラ =========
     FrameScheduler                          m_scheduler;
-    Viewports                               m_viewports;
 
-    // 共有のシーンレンダラー（ルートシグネチャ/CBリングに接続）
-    SceneRenderer                           m_sceneRenderer;
+    // ========= 画面出力 / シーン描画 =========
+    Presenter                               m_presenter;
+    SceneLayer                              m_sceneLayer;
 
     // ImGui SRVのベーススロット（フレームごとに使い分け）
     static constexpr UINT kSceneSrvBase = 16;
-    static constexpr UINT kGameSrvBase = 32;
+    static constexpr UINT kGameSrvBase  = 32;
 
-    GpuGarbageQueue m_garbage;
+    // 遅延破棄キュー
+    GpuGarbageQueue                         m_garbage;
 };

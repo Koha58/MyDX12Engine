@@ -1,3 +1,4 @@
+// Renderer/Viewports.cpp
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -14,12 +15,6 @@
 #include "Editor/EditorContext.h"
 
 using namespace DirectX;
-
-static inline unsigned SnapTo(unsigned v, unsigned step) {
-    if (step == 0) return v & ~1u; // 偶数アラインのみ
-    // 中央丸めで step にスナップし、ついでに偶数化
-    return (((v + step / 2) / step) * step) & ~1u;
-}
 
 void Viewports::Initialize(ID3D12Device* dev, unsigned w, unsigned h)
 {
@@ -67,50 +62,103 @@ void Viewports::FeedToUI(EditorContext& ctx, ImGuiLayer* imgui,
     ctx.gameRTHeight = m_game.Height();
 }
 
-void Viewports::RequestSceneResize(unsigned w, unsigned h, float /*dt*/)
+void Viewports::RequestSceneResize(unsigned w, unsigned h, float dt)
 {
     if (w == 0 || h == 0) return;
 
-    // Fit側で偶数化済みだが、念のため偶数に揃える
-    auto even = [](unsigned v) { return (v + 1u) & ~1u; };
-    m_pendingW = even(w);
-    m_pendingH = even(h);
+    // 1) ステップスナップ（ドラッグ中の微小変化で再生成しない）
+    constexpr unsigned kStep = 8;
+    auto StepSnap = [](unsigned v, unsigned step) {
+        if (step == 0) return v;
+        return (unsigned)(((v + step / 2) / step) * step);
+        };
+    auto Even = [](unsigned v) { return (v + 1u) & ~1u; };
 
-    // ヒステリシス系は無効化
-    m_desiredW = m_desiredH = 0;
-    m_desiredStableTime = 0.0f;
+    unsigned wantW = Even(StepSnap(w, kStep));
+    unsigned wantH = Even(StepSnap(h, kStep));
+
+    // 2) 目標が変わったら安定時間をリセット
+    if (wantW != m_desiredW || wantH != m_desiredH) {
+        m_desiredW = wantW;
+        m_desiredH = wantH;
+        m_desiredStableTime = 0.0f;
+        return;
+    }
+
+    // 3) 同じ目標が継続した時間を積算
+    if (dt > 0.0f) m_desiredStableTime += dt;
+
+    // 4) 一定時間ブレなかったら pending に確定
+    constexpr float kStableSec = 0.12f; // 0.08～0.20 で調整可
+    if (m_desiredStableTime >= kStableSec) {
+        // 既に同サイズなら noop
+        if (m_desiredW != m_scene.Width() || m_desiredH != m_scene.Height()) {
+            m_pendingW = m_desiredW;
+            m_pendingH = m_desiredH;
+        }
+        // 次回に備えてリセット
+        m_desiredW = m_desiredH = 0;
+        m_desiredStableTime = 0.0f;
+    }
 }
-
 
 RenderTargetHandles Viewports::ApplyPendingResizeIfNeeded(ID3D12Device* dev)
 {
-    RenderTargetHandles old{};
-    if (m_pendingW == 0 || m_pendingH == 0) return old;
+    RenderTargetHandles toDispose{}; // 今フレームの EndFrame に渡す分（最大1個）
+    if (m_pendingW == 0 || m_pendingH == 0) return toDispose;
 
-    if (m_pendingW == m_scene.Width() && m_pendingH == m_scene.Height()) {
-        m_pendingW = m_pendingH = 0;
-        return old;
+    const bool needScene = (m_pendingW != m_scene.Width() || m_pendingH != m_scene.Height());
+    const bool needGame = (m_pendingW != m_game.Width() || m_pendingH != m_game.Height());
+
+    // 旧を必ず Detach（即 Release はしない）
+    if (needScene) {
+        RenderTargetHandles old = m_scene.Detach();
+        // 1個目は今フレームへ、2個目は持ち越し
+        if (!toDispose.color && !toDispose.depth && !toDispose.rtvHeap && !toDispose.dsvHeap) {
+            toDispose = std::move(old);
+        }
+        else if (!m_carryOverDead.color && !m_carryOverDead.depth
+            && !m_carryOverDead.rtvHeap && !m_carryOverDead.dsvHeap) {
+            m_carryOverDead = std::move(old);
+        } // それ以上は想定外（必要なら更に積む設計に）
+    }
+    if (needGame) {
+        RenderTargetHandles old = m_game.Detach();
+        if (!toDispose.color && !toDispose.depth && !toDispose.rtvHeap && !toDispose.dsvHeap) {
+            toDispose = std::move(old);
+        }
+        else if (!m_carryOverDead.color && !m_carryOverDead.depth
+            && !m_carryOverDead.rtvHeap && !m_carryOverDead.dsvHeap) {
+            m_carryOverDead = std::move(old);
+        }
     }
 
-    // 旧RTを切り離し（ComPtr を移動）
-    old = m_scene.Detach();
-
-    // 再作成（確定済みのスナップサイズ）
-    RenderTargetDesc s{};
-    s.width = m_pendingW; s.height = m_pendingH;
-    s.colorFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-    s.depthFormat = DXGI_FORMAT_D32_FLOAT;
-    s.clearColor[0] = 0.10f; s.clearColor[1] = 0.10f; s.clearColor[2] = 0.10f; s.clearColor[3] = 1.0f;
-    s.clearDepth = 1.0f;
-    m_scene.Create(dev, s);
-
-    // サイズが変わったので Scene 基準と Game 固定を取り直す
-    m_sceneProjCaptured = false;
-    m_gameFrozen = false;
+    // 新規作成（Scene / Game とも）
+    if (needScene) {
+        RenderTargetDesc s{};
+        s.width = m_pendingW; s.height = m_pendingH;
+        s.colorFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+        s.depthFormat = DXGI_FORMAT_D32_FLOAT;
+        s.clearColor[0] = 0.10f; s.clearColor[1] = 0.10f; s.clearColor[2] = 0.10f; s.clearColor[3] = 1.0f;
+        s.clearDepth = 1.0f;
+        m_scene.Create(dev, s);
+        m_sceneProjCaptured = false; // 投影基準を取り直す
+    }
+    if (needGame) {
+        RenderTargetDesc g{};
+        g.width = m_pendingW; g.height = m_pendingH;
+        g.colorFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+        g.depthFormat = DXGI_FORMAT_D32_FLOAT;
+        g.clearColor[0] = 0.12f; g.clearColor[1] = 0.12f; g.clearColor[2] = 0.12f; g.clearColor[3] = 1.0f;
+        g.clearDepth = 1.0f;
+        m_game.Create(dev, g);
+        m_gameFrozen = false; // 固定カメラの初期投影/ビューを取り直す
+    }
 
     m_pendingW = m_pendingH = 0;
-    return old;
+    return toDispose; // ★ EndFrame に渡すのは最大1個
 }
+
 
 void Viewports::RenderScene(ID3D12GraphicsCommandList* cmd, SceneRenderer& sr,
     const CameraComponent* cam, const Scene* scene,
