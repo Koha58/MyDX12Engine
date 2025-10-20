@@ -5,154 +5,163 @@
 using namespace DirectX;
 
 /*
--------------------------------------------------------------------------------
-TransformComponent.cpp — 簡易メモ
+===============================================================================
+TransformComponent.cpp
 
-前提
-- 左手系(+Z 前, +X 右, +Y 上)。
-- 回転は「度」で保持。行列にする時だけラジアンへ。
-- 回転合成順は必ず X(Pitch) → Y(Yaw) → Z(Roll) に統一。
+座標系と約束事
+- 左手系 (Left-Handed) 前提：+Z 前方, +X 右, +Y 上。
+- Rotation は「度(°)」で保持する。行列化する直前にラジアンへ変換。
+- 回転の合成順序は X(Pitch) → Y(Yaw) → Z(Roll) に“固定”する。
+  （実装内のあらゆる回転行列生成がこの順序であることを保証）
 
-実装指針
-- 回転行列は MakeRotationXYZ() で一元化（順序の取り違え防止）。
-- 方向ベクトル(Forward/Right/Up)は TransformNormal(w=0)→Normalize。
-  ※ TransformCoord は平行移動を含むので使わない。
+方針
+- 回転行列は必ず MakeRotationXYZ() を通す（順序の食い違い事故を防止）。
+- 方向ベクトル (Forward/Right/Up) は TransformNormal(w=0) → Normalize。
+  ※ TransformCoord は平行移動を含むため方向ベクトル算出には不適。
+- LookAt は左手系の“向き”を逆算して Pitch/Yaw を設定（Roll は変更しない）。
 
-LookAt の要点（左手系）
-- dir = normalize(target - position)。
-- yaw   = atan2(dir.x, dir.z)
-- pitch = atan2(dir.y, sqrt(dir.x^2 + dir.z^2))
-- 位置と目標が同一点（|dir|≈0）のときは何もしない（NaN 防止）。
-
-備考
-- 上記の統一を崩すと「90°ごとに跳ぶ」等の不一致が起きやすい。
-- Pitch ±90° 付近はジンバルロックに注意（必要なら quaternion 検討）。
--------------------------------------------------------------------------------
+注意点
+- 位置と目標がほぼ同一点のときの LookAt は無効（NaN/Inf を避けるため何もしない）。
+- Pitch が ±90° 近傍でジンバルロック気味になるのはオイラー角の宿命。
+  必要に応じてクォータニオン設計に切り替え可能。
+===============================================================================
 */
 
 // ──────────────────────────────────────────────────────────────
-// ヘルパー：回転行列の一貫性を担保（X→Y→Z の順で合成）
-// どこからでも必ずこの関数を使って回転行列を作ること。
+// ヘルパ：一貫した回転行列生成（X→Y→Z の順）
+// どこからでも“必ず”これを使うことで順序のズレを防止。
 // ──────────────────────────────────────────────────────────────
 static inline XMMATRIX MakeRotationXYZ(float pitchDeg, float yawDeg, float rollDeg)
 {
-    // 各軸の回転を「度→ラジアン」に変換してから個別の回転行列を生成
-    const XMMATRIX Rx = XMMatrixRotationX(XMConvertToRadians(pitchDeg)); // Pitch (X)
-    const XMMATRIX Ry = XMMatrixRotationY(XMConvertToRadians(yawDeg));   // Yaw   (Y)
-    const XMMATRIX Rz = XMMatrixRotationZ(XMConvertToRadians(rollDeg));  // Roll  (Z)
+    // 度 -> ラジアンへ変換
+    const float rx = XMConvertToRadians(pitchDeg);
+    const float ry = XMConvertToRadians(yawDeg);
+    const float rz = XMConvertToRadians(rollDeg);
 
-    // ←この順番（X→Y→Z）を全箇所で統一すること！
+    // 個別の軸回転行列を作成
+    const XMMATRIX Rx = XMMatrixRotationX(rx); // Pitch (上下)
+    const XMMATRIX Ry = XMMatrixRotationY(ry); // Yaw   (左右)
+    const XMMATRIX Rz = XMMatrixRotationZ(rz); // Roll  (ひねり)
+
+    // 合成順序は固定（X→Y→Z）
     return Rx * Ry * Rz;
 }
 
 // ============================================================================
-// TransformComponent
-//  - Position/Rotation(度)/Scale を保持
-//  - 左手系(+Z 前) 前提で実装
-//  - Rotation は「度」で保持し、行列化の直前だけラジアン変換
+// コンストラクタ：平行移動=0、回転=0（度）、スケール=1 で初期化
 // ============================================================================
 TransformComponent::TransformComponent()
     : Component(ComponentType::Transform),
     Position(0.0f, 0.0f, 0.0f),
-    Rotation(0.0f, 0.0f, 0.0f),  // X:Pitch, Y:Yaw, Z:Roll（度）
+    Rotation(0.0f, 0.0f, 0.0f),   // X:Pitch, Y:Yaw, Z:Roll（いずれも度）
     Scale(1.0f, 1.0f, 1.0f)
 {
 }
 
 // ----------------------------------------------------------------------------
 // GetWorldMatrix
-//  - 「ローカル → ワールド」変換の核となる行列。
-//  - S * R(X→Y→Z) * T で合成。
-//    ※ここでも、回転順序は必ず MakeRotationXYZ と同じになるよう統一。
+// ローカル -> ワールドの変換行列を返す。
+// 左手系の一般的な合成：S * R(X→Y→Z) * T
+// ※ 回転順序は MakeRotationXYZ と合わせて一貫性を担保。
 // ----------------------------------------------------------------------------
 XMMATRIX TransformComponent::GetWorldMatrix() const
 {
+    // スケーリング行列（各軸独立）
     const XMMATRIX S = XMMatrixScaling(Scale.x, Scale.y, Scale.z);
-    const XMMATRIX R = MakeRotationXYZ(Rotation.x, Rotation.y, Rotation.z); // ←統一ポイント
+
+    // 回転行列（度→ラジアン化を含む、順序は X→Y→Z に固定）
+    const XMMATRIX R = MakeRotationXYZ(Rotation.x, Rotation.y, Rotation.z);
+
+    // 平行移動行列
     const XMMATRIX T = XMMatrixTranslation(Position.x, Position.y, Position.z);
 
-    // 最終的なワールド行列（左手系）
+    // 合成して返す
     return S * R * T;
 }
 
 // ----------------------------------------------------------------------------
 // GetForwardVector
-//  - ローカル(0,0,1) を「回転のみ」でワールドへ。
-//  - TransformNormal（w=0）＋ Normalize を使用（平行移動の影響を除去）。
+// ローカルの (0,0,1) を回転だけでワールドへ変換し、正規化して返す。
+// TransformNormal(w=0) を使うことで平行移動の影響を除去。
 // ----------------------------------------------------------------------------
 XMVECTOR TransformComponent::GetForwardVector() const
 {
-    const XMMATRIX R = MakeRotationXYZ(Rotation.x, Rotation.y, Rotation.z); // ←統一
-    // w=0 の方向ベクトルを回転。最後に正規化しておくと精度面で安心。
+    const XMMATRIX R = MakeRotationXYZ(Rotation.x, Rotation.y, Rotation.z);
     XMVECTOR v = XMVector3TransformNormal(XMVectorSet(0.f, 0.f, 1.f, 0.f), R);
     return XMVector3Normalize(v);
 }
 
 // ----------------------------------------------------------------------------
-// GetRightVector : ローカル(1,0,0) → ワールド
+// GetRightVector
+// ローカルの (1,0,0) を回転だけでワールドへ変換し、正規化して返す。
 // ----------------------------------------------------------------------------
 XMVECTOR TransformComponent::GetRightVector() const
 {
-    const XMMATRIX R = MakeRotationXYZ(Rotation.x, Rotation.y, Rotation.z); // ←統一
+    const XMMATRIX R = MakeRotationXYZ(Rotation.x, Rotation.y, Rotation.z);
     XMVECTOR v = XMVector3TransformNormal(XMVectorSet(1.f, 0.f, 0.f, 0.f), R);
     return XMVector3Normalize(v);
 }
 
 // ----------------------------------------------------------------------------
-// GetUpVector : ローカル(0,1,0) → ワールド
+// GetUpVector
+// ローカルの (0,1,0) を回転だけでワールドへ変換し、正規化して返す。
 // ----------------------------------------------------------------------------
 XMVECTOR TransformComponent::GetUpVector() const
 {
-    const XMMATRIX R = MakeRotationXYZ(Rotation.x, Rotation.y, Rotation.z); // ←統一
+    const XMMATRIX R = MakeRotationXYZ(Rotation.x, Rotation.y, Rotation.z);
     XMVECTOR v = XMVector3TransformNormal(XMVectorSet(0.f, 1.f, 0.f, 0.f), R);
     return XMVector3Normalize(v);
 }
 
 // ----------------------------------------------------------------------------
 // LookAt(target)
-//  - 位置は保持したまま、向きだけ target を向くように Rotation(度) を設定。
-//  - 左手系(+Z 前)想定の逆算式：
-//      forward = (sinYaw * cosPitch,  sinPitch,  cosYaw * cosPitch)
-//      yaw     = atan2(x, z)
-//      pitch   = atan2(y, sqrt(x^2 + z^2))
-//  - 「位置と目標が同一点」の場合は方向が定義できないため何もしない。
+// - 位置はそのまま、向きだけ target を向くように Rotation(度) を設定。
+// - 左手系における “dir からオイラー角(ピッチ/ヨー) を逆算” する。
+//   yaw   = atan2(dir.x, dir.z)
+//   pitch = atan2(dir.y, sqrt(dir.x^2 + dir.z^2))
+// - 目標点と同一点（ほぼゼロ距離）のときは何もしない（NaN/Inf 抑止）。
+// - worldUp はここでは未使用（Roll を固定する設計のため）。必要があれば拡張可。
 // ----------------------------------------------------------------------------
 void TransformComponent::LookAt(const XMFLOAT3& target, const XMFLOAT3& /*worldUp*/)
 {
-    // 現在位置と目標位置をベクトルへ
+    // 現在位置 p と目標位置 t をロード
     XMVECTOR p = XMLoadFloat3(&Position);
     XMVECTOR t = XMLoadFloat3(&target);
 
-    // ゼロ距離ガード：同一点（あるいは極端に近い）の場合は早期 return
-    // これが無いと正規化で NaN/Inf 化し、回転角が「飛ぶ」原因になる。
+    // 方向ベクトル d = t - p
     XMVECTOR d = XMVectorSubtract(t, p);
+
+    // ゼロ距離（あるいは非常に近い）なら向きは定義できないので早期 return
     if (XMVector3Less(XMVector3LengthSq(d), XMVectorReplicate(1e-8f)))
         return;
 
-    // 位置→目標 方向の正規化ベクトル dir=(x,y,z)
+    // 正規化方向 dir = (x,y,z)
     XMVECTOR dir = XMVector3Normalize(d);
     const float x = XMVectorGetX(dir);
     const float y = XMVectorGetY(dir);
     const float z = XMVectorGetZ(dir);
 
-    // atan2 を使用：asin より端で安定。x,z の並びにも注意（左手系想定で yaw=atan2(x,z)）
-    const float yawRad = std::atan2(x, z);                              // [-pi, pi]
-    const float pitchRad = std::atan2(y, std::sqrt(x * x + z * z));       // [-pi/2, pi/2]
+    // 左手系のヨー/ピッチ逆算（範囲：yaw ∈ [-pi,pi], pitch ∈ [-pi/2,pi/2]）
+    const float yawRad = std::atan2(x, z);
+    const float pitchRad = std::atan2(y, std::sqrt(x * x + z * z));
 
-    // 度に戻して格納
-    Rotation.x = XMConvertToDegrees(pitchRad);  // Pitch（上向き＋）
-    Rotation.y = XMConvertToDegrees(yawRad);    // Yaw（右回り＋）
-    // Rotation.z（Roll）はここでは変更しない。必要なら 0 固定の運用も可。
+    // ラジアン -> 度
+    Rotation.x = XMConvertToDegrees(pitchRad); // Pitch（上向きが＋）
+    Rotation.y = XMConvertToDegrees(yawRad);   // Yaw（右回りが＋）
+    // Rotation.z（Roll）は保持（ここで勝手に 0 にしない）
 }
 
 // ----------------------------------------------------------------------------
 // LookAt(position, target)
-//  - 位置も同時に設定してから LookAt(target) を適用。
+// 位置も同時に設定してから LookAt(target) を適用。
 // ----------------------------------------------------------------------------
 void TransformComponent::LookAt(const XMFLOAT3& position,
     const XMFLOAT3& target,
     const XMFLOAT3& worldUp)
 {
+    // 位置を先に反映
     Position = position;
-    LookAt(target, worldUp);  // 上の処理に委譲（ゼロ距離ガード含む）
+
+    // 方向のみ算出して回転を設定（上向きはここでは使わない設計）
+    LookAt(target, worldUp);
 }

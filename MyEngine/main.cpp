@@ -33,15 +33,19 @@
 #include "Core/Input.h"
 #include "Components/CameraComponent.h"
 #include "Components/CameraControllerComponent.h"
+
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx12.h"
 
+// ImGui の Win32 ハンドラ
 IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
     HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-
+// ----------------------------------------------------------------------------
+// アプリ全体で共有したい軽量な状態をウィンドウにぶら下げる
+// ----------------------------------------------------------------------------
 struct AppContext {
     D3D12Renderer* renderer = nullptr;
     std::shared_ptr<CameraComponent> camera;
@@ -108,41 +112,36 @@ private:
 // ============================================================================
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    // 最初にImGuiへ渡す(ImGuiが処理したらここで終了)
+    // 1) 最初に ImGui へ転送（ImGui が処理した場合はここで終了）
     if (ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam))
-    {
         return 0;
-    }
 
-    Input::ProcessMessage(message, wParam, lParam); // 入力の反映
+    // 2) 自作入力層へ転送（キーボード/マウス状態を内部に反映）
+    Input::ProcessMessage(message, wParam, lParam);
 
-    AppContext* app = GetApp(hWnd); // カメラ/レンダラへアクセスするため
+    // 3) アプリコンテキスト取得（WndProc は static なため、ウィンドウにぶら下げる）
+    AppContext* app = GetApp(hWnd);
 
     switch (message) {
     case WM_SIZE: {
-
+        // 最小化時の 0 サイズはスキップ
         if (!app || wParam == SIZE_MINIMIZED) return 0;
 
         const UINT newW = LOWORD(lParam);
         const UINT newH = HIWORD(lParam);
         if (newW == 0 || newH == 0) return 0;
 
-        if (app)
-        {
-            app->clientW = newW;
-            app->clientH = newH;
+        // クライアントサイズ更新
+        app->clientW = newW;
+        app->clientH = newH;
 
-            // 1) 先にGPUリソースを新サイズで作り直す
-            if (app->renderer)
-            {
-                app->renderer->Resize(newW, newH);
-            }
-            // 2) その後にカメラのアスペクトを更新
-            if (app->camera)
-            {
-                app->camera->SetAspect((float)newW / (float)newH);
-            }
-        }
+        // 1) 先に GPU リソース（スワップチェイン等）を新サイズでリサイズ
+        if (app->renderer)
+            app->renderer->Resize(newW, newH);
+
+        // 2) その後にカメラのアスペクトを更新（※ renderer::Resize 側でも更新しているなら二重は不要）
+        if (app->camera)
+            app->camera->SetAspect(static_cast<float>(newW) / static_cast<float>(newH));
 
         return 0;
     }
@@ -200,7 +199,6 @@ MeshData CreateCubeMeshData()
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int nCmdShow)
 {
     // ---------------- 1) ウィンドウクラス登録 ----------------
-    // ※ ここを触るのはウィンドウの見た目/挙動を変えたい時（アイコン/カーソル/背景 等）
     const wchar_t CLASS_NAME[] = L"D3D12WindowClass";
 
     WNDCLASS wc = {};
@@ -215,8 +213,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     // 表示したいクライアント領域は 800x600。外枠ぶんは AdjustWindowRect で加算して作成する。
     RECT wr = { 0, 0, 800, 600 };
     AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);  // メニュー無し
-    const int outerW = wr.right - wr.left;             // 外枠込み幅
-    const int outerH = wr.bottom - wr.top;              // 外枠込み高
+    const int outerW = wr.right - wr.left; // 外枠込み幅
+    const int outerH = wr.bottom - wr.top;  // 外枠込み高
 
     HWND hWnd = CreateWindowEx(
         0, CLASS_NAME, L"DirectX12 Engine",
@@ -237,22 +235,17 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     const UINT clientH = rc.bottom - rc.top;
 
     // ---------------- 4) D3D12 初期化 ----------------
-    // スワップチェイン／RTV/DSV など内部リソースは renderer 側で構築される。
     D3D12Renderer renderer;
     renderer.Initialize(hWnd, clientW, clientH);
 
+    // ウィンドウにアプリコンテキストをぶら下げる（WndProc から参照するため）
     static AppContext ctx;
     SetWindowLongPtr(hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&ctx));
-
-    // レンダラ初期化後に埋める
     ctx.renderer = &renderer;
-
-    // 初期アスペクト(起動直後のクライアントサイズ)を保存しておく
     ctx.clientW = clientW;
     ctx.clientH = clientH;
 
     // ---------------- 5) シーン構築 ----------------
-    // SceneManager は複数シーンの切替/保持を担う。ここでは "Main" を作って有効化。
     SceneManager sceneManager;
     auto mainScene = std::make_shared<Scene>("Main Scene");
     sceneManager.AddScene("Main", mainScene);
@@ -262,7 +255,6 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     MeshData cube = CreateCubeMeshData();
 
     // --- Cube1（左）: ライフサイクルログ付き ---
-    // 重要: GameObject::Create() を使う（shared_from_this 安全化）。
     auto cube1 = GameObject::Create("Cube1");
     cube1->Transform->Position = { -2.0f, 0.0f, 0.0f };
     cube1->AddComponent<TestComponent>(); // OnEnable/Disable/Destroy のログ
@@ -290,7 +282,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     camObj->AddComponent<CameraControllerComponent>(camObj.get(), cameraComp.get());
     mainScene->AddGameObject(camObj);
 
-    // カメラを使った“後”で埋める
+    // AppContext にも保持（WndProc でアスペクト更新したい）
     ctx.camera = cameraComp;
 
     // ---------------- 6) メインループ ----------------
@@ -328,10 +320,10 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
 
         // ---- 3) 更新＆描画 ----
         if (auto scene = sceneManager.GetActiveScene()) {
-            scene->Update(dt);                 // ゲームロジック（親→子→各コンポーネント）
-            renderer.SetScene(scene);          // 今回描画するシーン
-            renderer.SetCamera(cameraComp);           // 使用カメラ
-            renderer.Render();                 // D3D12 コマンド記録→実行→Present
+            scene->Update(dt);                  // ゲームロジック（親→子→各コンポーネント）
+            renderer.SetScene(scene);           // 今回描画するシーン
+            renderer.SetCamera(cameraComp);     // 使用カメラ
+            renderer.Render();                  // D3D12 コマンド記録→実行→Present
         }
 
         // ---- 4) 入力スナップショット更新 ----

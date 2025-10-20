@@ -1,11 +1,66 @@
+// EditorInterop.cpp
+//------------------------------------------------------------------------------
+// 目的：Editor（ImGui 側）とゲームロジック側の“軽い状態共有”。
+//       ここでは「Scene ウィンドウ上にカーソルが乗っているか」「フォーカスがあるか」を
+//       グローバルに保持/取得するだけの極小ユーティリティを提供する。
+// 使用例：
+//   - ImGui 側のレイアウト/描画中に、Scene ウィンドウの Hovered/Focused を検出して Set～ を呼ぶ
+//   - ゲーム側（入力処理など）で Is～ を参照して、カメラ操作などの許可/不許可を判断
+//
+// 注意：
+//   - 現状は単純なファイルスコープの静的変数で保持（＝マルチスレッド前提ではない）。
+//     複数スレッドから同時に更新/参照する可能性がある場合は std::atomic<bool> などへ差し替えること。
+//   - 値の寿命：プロセス存続期間。EditorInterop::Set～ を都度呼んで最新状態に保つこと。
+//------------------------------------------------------------------------------
+
 #include "EditorInterop.h"
 
 namespace {
+    // Scene ウィンドウにマウスが「乗っている（Hovered）」かどうか
+    // 例：ImGui::IsWindowHovered() の結果をフレーム毎に反映する。
     bool g_sceneHovered = false;
+
+    // Scene ウィンドウに「キーボードフォーカスがある（Focused）」かどうか
+    // 例：ImGui::IsWindowFocused() の結果をフレーム毎に反映する。
     bool g_sceneFocused = false;
 }
 
-void EditorInterop::SetSceneHovered(bool v) { g_sceneHovered = v; }
-void EditorInterop::SetSceneFocused(bool v) { g_sceneFocused = v; }
-bool EditorInterop::IsSceneHovered() { return g_sceneHovered; }
-bool EditorInterop::IsSceneFocused() { return g_sceneFocused; }
+//------------------------------------------------------------------------------
+// SetSceneHovered
+//   ImGui 側で Hovered の判定が取れたら、その値をここへ渡す。
+//   毎フレームの UI 更新タイミングで呼ぶことを想定。
+//------------------------------------------------------------------------------
+void EditorInterop::SetSceneHovered(bool v)
+{
+    g_sceneHovered = v;
+}
+
+//------------------------------------------------------------------------------
+// SetSceneFocused
+//   ImGui 側で Focused の判定が取れたら、その値をここへ渡す。
+//   毎フレームの UI 更新タイミングで呼ぶことを想定。
+//------------------------------------------------------------------------------
+void EditorInterop::SetSceneFocused(bool v)
+{
+    g_sceneFocused = v;
+}
+
+//------------------------------------------------------------------------------
+// IsSceneHovered
+//   現在の Hovered 状態を取得（ゲーム側から参照）。
+//   例：Hovered の時だけ中ボタンドラッグでのパン操作を有効にする等。
+//------------------------------------------------------------------------------
+bool EditorInterop::IsSceneHovered()
+{
+    return g_sceneHovered;
+}
+
+//------------------------------------------------------------------------------
+// IsSceneFocused
+//   現在の Focused 状態を取得（ゲーム側から参照）。
+//   例：Focused の時だけキーボードでのフライ移動を受け付ける等。
+//------------------------------------------------------------------------------
+bool EditorInterop::IsSceneFocused()
+{
+    return g_sceneFocused;
+}

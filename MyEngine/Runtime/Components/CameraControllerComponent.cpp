@@ -7,7 +7,6 @@
 #include "Core/Input.h"
 #include "Core/EditorInterop.h"
 
-
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "imgui_impl_win32.h"
@@ -18,47 +17,51 @@
 
 using namespace DirectX;
 
-// ============================================================================
-// Controls (Unityライク)
-// ----------------------------------------------------------------------------
-// マウス：
-//   ・MMB（中ボタン） + ドラッグ …… パン（画面と平行に移動：左右・上下）
-//   ・RMB（右ボタン） + ドラッグ …… フライ回転（視点の向きを変更）
-//   ・Alt + LMB（左ボタン）+ ドラッグ …… オービット（画面中央の注視点を中心に回転）
-//   ・マウスホイール …………………… ドリー（前後移動 / ズーム相当）
-//
-// キーボード（RMB押下中のフライ時に有効）：
-//   ・W / S ……………………………… 前進 / 後退（ローカル forward）
-//   ・A / D ……………………………… 左 / 右（ローカル right）
-//   ・Q / E ……………………………… 下降 / 上昇（ワールド up）
-//   ・Ctrl（左右どちらでも） ………… フライ速度ブースト（m_cfg.flyBoost 倍）
-//
-// 備考：
-//   ・「押した瞬間に姿勢が飛ぶ」を防ぐため、RMB/Alt+LMBの押下フレームは
-//     姿勢を変更しない（*JustStartedフラグで制御）。
-//   ・パンの上下方向は、Windowsのマウス座標系（上へ動かすと dy<0）に合わせて
-//     +up へは -dy を使用。
-//   ・左右/上下の反転や感度は CameraTuning (m_cfg) で調整可能。
-//      - 左右反転：HandleFly/HandleOrbit の yaw 加算の符号を反転
-//      - 上下反転：pitch 側の in.dy の符号を反転
-// ============================================================================
+/*
+    CameraControllerComponent
+    ----------------------------------------------------------------------------
+    目的：
+      - シーンビュー用のエディタカメラ（Unity風操作）を担当。
+      - マウス/キーボード入力から、所有 GameObject の Transform を直接更新する。
+      - カメラ本体（CameraComponent）は Transform を参照して描画時に View を作る前提。
+
+    操作（デフォルト）：
+      マウス
+        * MMBドラッグ：パン（平行移動）
+        * RMBドラッグ：フライ（回転）＋ WASD/QE で移動
+        * Alt+LMBドラッグ：オービット（注視点 pivot を中心に回転）
+        * Alt+RMBドラッグ：ドリー距離変更（pivot との距離）
+        * ホイール：前後ドリー（位置を前後に移動）
+      キー（RMBフライ中）
+        * W/S : 前進/後退
+        * A/D : 左/右
+        * Q/E : 下/上
+        * Ctrl : スピードブースト（flyBoost 倍）
+
+    ポイント：
+      - クリック開始フレームで姿勢が飛ばないよう “JustStarted” フラグで1フレーム抑止。
+      - 操作の開始は「Sceneウィンドウがホバー中のみ」。継続中はウィンドウ外でもラッチ。
+      - ImGui の IO.WantCaptureMouse を尊重。ただし “Scene 上の明示操作” と “継続中” は許可。
+*/
 
 //==============================================================================
-// コンストラクタ：毎フレームの GetComponent を避けるため Transform をキャッシュ
+// コンストラクタ：所有 Transform をキャッシュ（毎フレの GetComponent を避ける）
 //==============================================================================
 CameraControllerComponent::CameraControllerComponent(GameObject* owner, CameraComponent* camera)
     : Component(ComponentType::None), m_Camera(camera)
 {
+    // TransformComponent は頻繁アクセスのため生ポインタで保持（所有は GameObject 側）
     m_Transform = owner->GetComponent<TransformComponent>().get();
 }
 
+// ログのみ（必要に応じてビューの有効化/無効化処理に置き換え可）
 void CameraControllerComponent::OnEnable() { OutputDebugStringA("CameraControllerComponent: OnEnable\n"); }
 void CameraControllerComponent::OnDisable() { OutputDebugStringA("CameraControllerComponent: OnDisable\n"); }
 
 //==============================================================================
 // Update（毎フレーム）
-//  - 「Scene ウィンドウ上でのみ」操作を開始できるようガードを追加
-//  - いったん開始したドラッグはウィンドウ外に出ても継続（ラッチ）
+//  - Scene領域のホバー/操作中ラッチ、ImGuiキャプチャなどのポリシーを先に判定
+//  - 優先度付きで各操作ハンドラを実行（パン → オービット → ドリー → ホイール → フライ）
 //==============================================================================
 void CameraControllerComponent::Update(float deltaTime)
 {
@@ -66,49 +69,48 @@ void CameraControllerComponent::Update(float deltaTime)
 
     ImGuiIO& io = ImGui::GetIO();
 
-    // 1) 入力を読む（WantCaptureMouse 判定より先に）
+    // 1) 入力収集（この段階で一度だけ）
     const CameraInputState in = ReadInput();
 
-    // 2) カメラ明示操作かどうか（MMB/RMB/Alt+LMB/Alt+RMB/ホイール）
+    // 2) 「明示的にカメラ操作したい」入力か？
     const bool sceneIntent =
         in.mmb || in.rmb ||
         (in.alt && (in.lmb || in.rmb)) ||
         (std::fabs(in.wheel) > 0.0f);
 
-    // 3) Scene 上で“新規開始”のみ許可。継続中はウィンドウ外でも許可
-    const bool sceneHoveredNow = EditorInterop::IsSceneHovered();   // ← 共有状態から取得
-    const bool actionActive = m_orbitActive || m_flyPrevRmb;     // 既に操作中？
-
+    // 3) Scene 上での新規開始のみ許可。継続中は許可（ホバーを外れても操作継続）
+    const bool sceneHoveredNow = EditorInterop::IsSceneHovered();
+    const bool actionActive = m_orbitActive || m_flyPrevRmb; // どれか継続中か
     if (!sceneHoveredNow && !actionActive) {
-        return; // Scene にいない＆操作も始まっていない
+        return; // ホバー外かつ何も開始していない
     }
 
-    // 4) ImGui がマウスを掴んでいても、
-    //    「Scene 上での明示操作」or「継続中」のときは通す
+    // 4) ImGui がマウスを掴んでいる場合のガード
+    //    - Scene上での明示操作 or すでに継続中 なら入力を通す
     if (io.WantCaptureMouse && !((sceneHoveredNow && sceneIntent) || actionActive)) {
         return;
     }
 
-    // --- Alt+LMB のエッジ検出（オービット開始/終了） -------------------------
+    // --- Alt+LMB（オービット）の開始/終了フラグ管理 ---------------------------
     const bool altLmb = (in.alt && in.lmb);
 
     if (altLmb && !m_prevAltLmb) // 押し始め
     {
-        // 現在姿勢を保存（開始フレームは復元してスキップ）
+        // 現在姿勢を保存（開始フレームはこの姿勢に復元して視覚的な“飛び”を防ぐ）
         m_pressPos = m_Transform->Position;
         m_pressRot = m_Transform->Rotation;
 
-        // pivot は「今の forward × 距離」の先
+        // pivot は「forward 方向の距離分」先（暫定距離は既存 dist か 5.0）
         XMVECTOR pos = XMLoadFloat3(&m_Transform->Position);
         XMVECTOR fwd = m_Transform->GetForwardVector();
         float distGuess = (m_OrbitDist > 0.0f) ? m_OrbitDist : 5.0f;
         XMVECTOR pivotV = XMVectorAdd(pos, XMVectorScale(fwd, distGuess));
         XMStoreFloat3(&m_orbitPivot, pivotV);
 
-        // 実距離に更新
+        // 実距離に更新（押下時点の pivot-位置 の長さ）
         m_OrbitDist = XMVectorGetX(XMVector3Length(XMVectorSubtract(pivotV, pos)));
 
-        // 基準角は現在の回転から
+        // 基準角は現在の回転から（以後、ドラッグ累積で加算）
         m_orbitYaw0 = m_pressRot.y;
         m_orbitPitch0 = m_pressRot.x;
 
@@ -116,7 +118,7 @@ void CameraControllerComponent::Update(float deltaTime)
         m_orbitAccY = 0.0f;
 
         m_orbitActive = true;
-        m_orbitJustStarted = true;
+        m_orbitJustStarted = true; // このフレームは見た目を変えない
     }
     else if (!altLmb && m_prevAltLmb) // 離した
     {
@@ -125,24 +127,23 @@ void CameraControllerComponent::Update(float deltaTime)
     }
     m_prevAltLmb = altLmb;
 
-    // --- RMB(フライ) のエッジ検出 -------------------------------------------
+    // --- RMB（フライ）の開始/終了フラグ管理 ----------------------------------
     const bool rmbNow = (in.rmb);
 
     if (rmbNow && !m_flyPrevRmb) // 押し始め
     {
-        // 押下時の Transform を保存（押下フレームは復元）
+        // 押下時の姿勢を保存（開始フレームは復元）
         m_pressPos = m_Transform->Position;
         m_pressRot = m_Transform->Rotation;
 
-        // 基準角は現在角から
+        // 基準角（以後、ドラッグ累積で加算）
         m_flyYaw0 = m_pressRot.y;
         m_flyPitch0 = m_pressRot.x;
 
-        // 累計ドラッグをリセット
         m_flyAccX = 0.0f;
         m_flyAccY = 0.0f;
 
-        m_flyJustStarted = true;  // このフレームは見た目を変えない
+        m_flyJustStarted = true;
     }
     else if (!rmbNow && m_flyPrevRmb) // 離した
     {
@@ -150,30 +151,28 @@ void CameraControllerComponent::Update(float deltaTime)
     }
     m_flyPrevRmb = rmbNow;
 
-    // 押した瞬間のフレームは、必ず保存した Transform に復元して終了
+    // クリック開始フレームは保存姿勢に戻して終了（“飛び”抑止）
     if (m_orbitJustStarted || m_flyJustStarted)
     {
         m_Transform->Position = m_pressPos;
         m_Transform->Rotation = m_pressRot;
-
-        // 次フレームから通常動作
         if (m_orbitJustStarted) m_orbitJustStarted = false;
         if (m_flyJustStarted)   m_flyJustStarted = false;
         return;
     }
 
-    // 5) 優先度順に処理
-    if (HandlePan(in))            return; // 中ボタン（MMB）：パン
+    // 5) 優先度順に処理（複数同時操作の競合を避ける）
+    if (HandlePan(in))            return; // MMB：パン
     if (HandleOrbit(in))          return; // Alt+LMB：オービット
     if (HandleDolly(in))          return; // Alt+RMB：ドリー距離変更
     if (HandleWheel(in))          return; // ホイール：前後ドリー
     if (HandleFly(in, deltaTime)) return; // RMB：フライ（回転＋移動）
 }
 
-
 //==============================================================================
-// ReadInput：Input から 1 フレーム分の入力状態を収集
-//------------------------------------------------------------------------------
+// ReadInput：1フレーム分の入力状態をまとめて取得
+//   - マウス移動量/スクロール量はここで一括取得して他の処理とブレさせない
+//==============================================================================
 CameraInputState CameraControllerComponent::ReadInput() const
 {
     CameraInputState s{};
@@ -183,39 +182,40 @@ CameraInputState CameraControllerComponent::ReadInput() const
     s.alt = Input::GetKey(KeyCode::LeftAlt) || Input::GetKey(KeyCode::RightAlt);
     s.ctrl = Input::GetKey(KeyCode::LeftControl) || Input::GetKey(KeyCode::RightControl);
 
-    // マウス移動量は1回でまとめて取得（XとYでタイミング差を出さない）
+    // マウス移動量（X/Y）…同一タイミングで取得（別々に読むとズレる可能性）
     auto md = Input::GetMouseDelta();
     s.dx = md.x;
     s.dy = md.y;
 
+    // ホイール（正/負で前後）
     s.wheel = Input::GetMouseScrollDelta();
     return s;
 }
 
 //==============================================================================
 // HandlePan（MMB + ドラッグ）
-//   ※中ボタンドラッグでパン（画面平行の左右・上下移動）
-//------------------------------------------------------------------------------
+//   - 画面に平行にカメラを移動（right/up 方向へ）
+//   - Windows座標系では“上へ動かすと dy < 0”なので、+up へは -dy を加える
+//==============================================================================
 bool CameraControllerComponent::HandlePan(const CameraInputState& in)
 {
-    if (!(in.mmb && !in.alt)) return false;
+    if (!(in.mmb && !in.alt)) return false; // Alt+MMB はここでは扱わない
 
     XMVECTOR pos = XMLoadFloat3(&m_Transform->Position);
     XMVECTOR right = m_Transform->GetRightVector();
     XMVECTOR fwd = m_Transform->GetForwardVector();
 
-    // 画面“上”ベクトルを Forward × Right で求める（左手系: forward×right = up）
+    // 画面の“上”は forward × right（左手系）
     XMVECTOR up = XMVector3Cross(fwd, right);
-    if (XMVector3Less(XMVector3LengthSq(up), XMVectorReplicate(1e-6f)))
-    {
+    if (XMVector3Less(XMVector3LengthSq(up), XMVectorReplicate(1e-6f))) {
+        // 万一 forward と right が並行で up が求められない場合の保険
         up = XMVectorSet(0.f, 1.f, 0.f, 0.f);
-    }      
-    else
-    {
+    }
+    else {
         up = XMVector3Normalize(up);
     }
-        
-    // Unity感：右へドラッグで +right、上へドラッグ（dy<0）で +up（-dy）
+
+    // ドラッグ量に応じて移動（感度は m_cfg.panSpeed）
     pos = XMVectorAdd(pos, XMVectorScale(right, +in.dx * m_cfg.panSpeed));
     pos = XMVectorAdd(pos, XMVectorScale(up, -in.dy * m_cfg.panSpeed));
 
@@ -225,60 +225,59 @@ bool CameraControllerComponent::HandlePan(const CameraInputState& in)
 
 //==============================================================================
 // HandleOrbit（Alt + LMB + ドラッグ）
-//   ※Alt+左ドラッグでオービット（画面中央の注視点を中心に回転）
-//------------------------------------------------------------------------------
-// オービット（Alt + LMB）
+//   - pivot を中心に角度（yaw/pitch）を更新 → その角度から forward を再取得 → pivot から距離分引いて位置決定
+//   - クリック開始フレームは視覚的に固定（m_orbitJustStarted）
+//==============================================================================
 bool CameraControllerComponent::HandleOrbit(const CameraInputState& in)
 {
-    // 条件：Alt+LMB を押している＆開始処理済み
     if (!(in.alt && in.lmb) || !m_orbitActive)
         return false;
 
-    // 開始フレームは見た目を変えない（クリック時の“飛び”防止）
     if (m_orbitJustStarted) {
         m_orbitJustStarted = false;
-        return true;
+        return true; // 始めの1フレは見た目を変えない
     }
 
-    // 累計ドラッグで相対角を決定（※左右反転したければ dx の符号を変える）
+    // ドラッグ累計 → 相対角
     m_orbitAccX += in.dx;
     m_orbitAccY += in.dy;
 
-    const float newYaw = m_orbitYaw0 + m_orbitAccX * m_cfg.lookSpeed;
-    const float newPitch = std::clamp(m_orbitPitch0 + m_orbitAccY * m_cfg.lookSpeed, -89.0f, 89.0f);
+    const float newYaw = m_orbitYaw0 + m_orbitAccX * m_cfg.lookSpeed;              // 左右
+    const float newPitch = std::clamp(m_orbitPitch0 + m_orbitAccY * m_cfg.lookSpeed,   // 上下（±89°でクランプ）
+        -89.0f, 89.0f);
 
-    // 1) まず回転だけを確定（Transform の forward はこの回転から計算される）
+    // 1) Transform の回転のみを先に確定（Transform の forward を一貫して使う）
     m_Transform->Rotation = { newPitch, newYaw, 0.0f };
 
-    // 2) その回転から forward を取得（Transform の式に完全に合わせる）
-    DirectX::XMVECTOR pivot = XMLoadFloat3(&m_orbitPivot);
-    DirectX::XMVECTOR forward = m_Transform->GetForwardVector(); // ← これが最重要
-    DirectX::XMVECTOR pos = DirectX::XMVectorSubtract(pivot, DirectX::XMVectorScale(forward, m_OrbitDist));
+    // 2) forward を Transform から再取得（回転計算を一点化）
+    XMVECTOR pivot = XMLoadFloat3(&m_orbitPivot);
+    XMVECTOR forward = m_Transform->GetForwardVector();
 
-    // 3) 位置を反映（向きは上で確定済み）
-    DirectX::XMStoreFloat3(&m_Transform->Position, pos);
+    // 3) 位置 = pivot - forward * 距離
+    XMVECTOR pos = XMVectorSubtract(pivot, XMVectorScale(forward, m_OrbitDist));
+    XMStoreFloat3(&m_Transform->Position, pos);
 
     return true;
 }
 
-
 //==============================================================================
 // HandleDolly（Alt + RMB + ドラッグ）
-//   ※Alt+右ドラッグでオービット距離を変更（右/下ドラッグで近づく符号）
-//------------------------------------------------------------------------------
+//   - pivot との距離を増減（右/下ドラッグで近づく符号設定）
+//   - 最小距離は 0.01f にクリップ（0 や負で反転/ゼロ割れ防止）
+//==============================================================================
 bool CameraControllerComponent::HandleDolly(const CameraInputState& in)
 {
     if (!(in.alt && in.rmb)) return false;
 
-    // 0.01f で下限クリップ（ゼロ割れ・反転防止）
+    // -in.dx - in.dy：右/下ドラッグを「+近づく」に
     m_OrbitDist = std::max(0.01f, m_OrbitDist + (-in.dx - in.dy) * m_cfg.dollySpeed);
     return true;
 }
 
 //==============================================================================
 // HandleWheel（マウスホイール）
-//   ※ホイールで前後ドリー（望遠的なFOV変更ではなく位置移動）
-//------------------------------------------------------------------------------
+//   - カメラを forward 方向に移動（望遠的なFOV変更ではなく“位置移動”でズーム相当）
+//==============================================================================
 bool CameraControllerComponent::HandleWheel(const CameraInputState& in)
 {
     if (in.wheel == 0.0f) return false;
@@ -293,32 +292,34 @@ bool CameraControllerComponent::HandleWheel(const CameraInputState& in)
 
 //==============================================================================
 // HandleFly（RMB + ドラッグ / + WASD/QE）
-//   ※右ドラッグで視線回転、WASD/QE と Ctrl でフライ移動
-//------------------------------------------------------------------------------
+//   - ドラッグで yaw/pitch を更新して回転、キー入力で移動
+//   - Ctrl で速度ブースト（flyBoost 倍）
+//==============================================================================
 bool CameraControllerComponent::HandleFly(const CameraInputState& in, float dt)
 {
     if (!in.rmb) return false;
 
-    // 累計ドラッグを更新（左右反転したければ in.dx の符号を反転）
+    // 累計ドラッグ → 相対角
     m_flyAccX += in.dx;
     m_flyAccY += in.dy;
 
-    // 相対ドラッグで角度を決定
+    // yaw/pitch を基準角から更新（上下は±89°にクランプ）
     m_Yaw = m_flyYaw0 + m_flyAccX * m_cfg.lookSpeed;
     m_Pitch = std::clamp(m_flyPitch0 + m_flyAccY * m_cfg.lookSpeed, -89.0f, 89.0f);
 
-    // Transform の回転を直接反映（Z=0：ロール無し）
+    // Transform の回転を反映（ロールは常に 0）
     m_Transform->Rotation = { m_Pitch, m_Yaw, 0.0f };
 
-    // 方向ベクトルは回転反映後に取得
+    // 方向ベクトルは回転反映後の Transform から取得
     XMVECTOR pos = XMLoadFloat3(&m_Transform->Position);
     XMVECTOR forward = m_Transform->GetForwardVector();
     XMVECTOR right = m_Transform->GetRightVector();
     XMVECTOR up = XMVectorSet(0, 1, 0, 0);
 
+    // 速度（Ctrl でブースト）
     const float v = m_cfg.flySpeed * dt * (in.ctrl ? m_cfg.flyBoost : 1.0f);
 
-    // キーに応じて移動（合成可：例 W + D で斜め前右）
+    // 合成移動（斜め移動可）
     if (Input::GetKey(KeyCode::W)) pos = XMVectorAdd(pos, XMVectorScale(forward, +v));
     if (Input::GetKey(KeyCode::S)) pos = XMVectorAdd(pos, XMVectorScale(forward, -v));
     if (Input::GetKey(KeyCode::A)) pos = XMVectorAdd(pos, XMVectorScale(right, -v));
